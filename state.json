@@ -1,0 +1,26 @@
+{
+  "version": "2.1",
+  "state": "INIT",
+  "stage": null,
+  "active_req_id": null,
+  "feature_suite_pass_ratio": null,
+  "full_suite_pass_ratio": null,
+  "regression_state": "NOT_RUN",
+  "regression_failures": [],
+  "integration_state": "NOT_RUN",
+  "integration_test_pass_ratio": null,
+  "feature_registry": {},
+  "file_ownership": {},
+  "last_updated": null,
+  "last_updated_by": "workbench-cli",
+  "arbiter_capabilities": {
+    "test_orchestrator": false,
+    "gherkin_validator": false,
+    "memory_rotator": false,
+    "audit_logger": false,
+    "crash_recovery": false,
+    "dependency_monitor": false,
+    "integration_test_runner": false,
+    "git_hooks": false
+  }
+}

@@ -1,0 +1,325 @@
+# Agentic Workbench v2 — System Guardrails (.clinerules)
+
+**Canonical File:** `.clinerules`
+**Alias:** `.cursorrules` (Cursor IDE compatibility alias — both files are identical in behavior)
+**Owner:** The Workbench (Engine Layer)
+**Version:** 2.1
+
+> **Authority:** This file is the behavioral constitution for all Roo Code agent modes. Every rule here is mandatory and must be enforced by the agent regardless of mode. Violations are not advisory — they are breaches of the workbench contract.
+
+---
+
+## 1. Session Lifecycle Protocols
+
+### 1.1 Startup Protocol (CHECK → CREATE → READ → ACT)
+
+Before taking any action in a session, the agent MUST execute this sequence **in order**:
+
+1. **CHECK** for `activeContext.md` in `memory-bank/hot-context/`
+2. **CREATE** `activeContext.md` from the template if it does not exist
+3. **READ** `activeContext.md` completely
+4. **READ** `progress.md` completely
+5. **ACT** — only after steps 1–4 are confirmed complete
+
+> **Rule SLC-1:** The agent MUST NOT perform any cognitive work (writing code, generating tests, etc.) before completing the CHECK→CREATE→READ sequence. The only permitted actions before step 5 are file existence checks and template instantiation.
+
+### 1.2 Close Protocol
+
+Before completing any task or session end, the agent MUST:
+
+1. Update `activeContext.md` — write current task status, last result, and next steps
+2. Update `progress.md` — mark completed items, reflect current checkbox state
+3. Update `RELEASE.md` if applicable — record any version bumps or release notes
+4. Run the audit logger to save session metadata to `docs/conversations/`:
+   ```
+   python .workbench/scripts/audit_logger.py save --session-id {session_id} --branch {branch}
+   ```
+5. Log completion status and recommendations to `handoff-state.md` using the handoff template
+
+> **Rule SLC-2:** Conversation logs in `docs/conversations/` are immutable once created. They must never be edited or deleted after creation.
+
+---
+
+## 2. Inter-Agent Handoff Protocol
+
+When the agent completes a task or reaches a timebox boundary, it MUST write a structured handoff to `handoff-state.md`:
+
+```markdown
+## Handoff: {Agent Mode} → {Next Agent Mode}
+- **REQ-ID:** REQ-NNN
+- **Completed:** {list of completed artifacts}
+- **Current State:** {state.json.state value}
+- **Recommendations:** {next steps for the receiving agent}
+- **Blocked By:** {any known blockers or dependencies}
+```
+
+The receiving agent MUST read `handoff-state.md` before taking any action in a new session or mode.
+
+> **Rule HND-1:** The agent MUST NOT assume it knows the current state of work. It MUST read `handoff-state.md` and `state.json` before acting, even if the task appears to be a continuation.
+
+> **Rule HND-2:** `handoff-state.md` is **ephemeral** — it is reset (not archived) at sprint end by the Arbiter's `memory_rotator.py`. Permanent decisions belong in `decisionLog.md`.
+
+---
+
+## 3. Traceability Mandates
+
+### 3.1 Requirement ID Assignment
+
+Every feature requirement MUST be assigned a unique Traceability ID before it enters Stage 2.
+
+- **Format:** `REQ-NNN` where NNN is a zero-padded 3-digit integer (e.g., `REQ-001`, `REQ-042`)
+- **Filename convention:** `{REQ-NNN}-{slug}.feature` in `/features/`
+- **Internal tag:** Every `.feature` file MUST contain `@REQ-NNN` as its first tag
+- **Commit scope:** Every commit related to a feature MUST use `feat(REQ-NNN)` as the commit type
+
+### 3.2 Dependency Declaration
+
+Features that depend on other features MUST declare dependencies using the `@depends-on` Gherkin tag:
+
+```gherkin
+@REQ-042
+@depends-on: REQ-038, REQ-041
+Feature: Payment Checkout Flow
+  ...
+```
+
+> **Rule TRC-1:** The agent MUST NOT begin Stage 3 implementation for any feature whose `@depends-on` tags reference features not yet in `MERGED` state in `state.json.feature_registry`.
+
+> **Rule TRC-2:** The agent MUST NOT write code that imports or calls live APIs from features whose `state.json.feature_registry` entry is not `MERGED`. Stub interfaces are permitted; live imports are not.
+
+---
+
+## 4. Commit Constraints
+
+### 4.1 Conventional Commits
+
+All commit messages MUST adhere to the Conventional Commits format:
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
+```
+
+- **Allowed types:** `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `perf`, `ci`
+- **Required scope for feature work:** `feat(REQ-NNN)`, `fix(REQ-NNN)`, `test(REQ-NNN)`
+- **Body:** Required for non-trivial changes — describe what and why
+- **Footer:** Reference related tickets: `Refs: REQ-NNN`, `Closes: REQ-NNN`
+
+### 4.2 Forbidden Commit Actions
+
+The agent MUST NOT:
+- Commit directly to `main` or `develop`
+- Commit on a branch that has already been merged to `main`
+- Use `git merge --delete-branch` when merging PRs
+- Commit without a Conventional Commits-compliant message
+- Commit changes to `state.json` directly (only the Arbiter writes to `state.json`)
+
+> **Rule CMT-1:** All commits MUST be made on a `feature/` or `lab/` branch. Direct commits to `main` or `develop` are physically blocked by the `pre-commit` and `pre-push` Git hooks.
+
+---
+
+## 5. State Management Rules
+
+### 5.1 Read Before Act
+
+The agent MUST read `state.json` before taking any action, every session start:
+
+- Check `state.json.state` to determine current pipeline state
+- Check `state.json.active_req_id` to identify the active feature
+- Check `state.json.feature_registry` for dependency status
+- Check `state.json.arbiter_capabilities` for command delegation status
+
+> **Rule STM-1:** The agent MUST NOT write to `state.json` under any circumstances. `state.json` is owned exclusively by The Arbiter (Python scripts + Git hooks). All state transitions are deterministic — not probabilistic.
+
+### 5.2 Two-Phase Test Execution
+
+During Stage 3 (Developer Agent), the agent MUST understand the two-phase test loop:
+
+**Phase 1 — Feature Scope Run:**
+- Runs only `/tests/unit/{REQ-NNN}-*.spec.ts` for the active feature
+- Fast feedback loop for iteration
+
+**Phase 2 — Full Regression Run:**
+- Runs ALL `/tests/unit/**/*.spec.ts` plus ALL `/tests/integration/**/*.spec.ts`
+- Triggered after every Phase 1 GREEN confirmation
+- Confirms no previously passing test has been broken
+
+> **Rule STM-2:** A feature is not `GREEN` until Phase 2 (full regression) passes. The agent must not self-declare completion after Phase 1 alone.
+
+---
+
+## 6. Integration Gate Rules
+
+### 6.1 Integration Test Requirements
+
+The agent MUST NOT consider a feature complete until:
+
+1. `state.json.state = GREEN` (unit tests — Phase 1 + Phase 2)
+2. `state.json.integration_state = GREEN` (integration tests)
+
+> **Rule INT-1:** The Developer Agent MUST NOT self-declare completion until both `state.json.state = GREEN` AND `state.json.integration_state = GREEN`. The Arbiter enforces this sequentially — no agent may bypass.
+
+### 6.2 Regression Handling
+
+When `state.json.regression_state = REGRESSION_RED`:
+
+> **Rule REG-1:** The Developer Agent MUST treat the regression failure log as its **primary input** — higher priority than the current feature's error log. The current feature's new code is the most likely cause of the regression.
+
+> **Rule REG-2:** The Arbiter MUST run the full test suite (all features, all integration tests) after every Phase 1 GREEN confirmation. A feature is not `GREEN` until the full suite is clean.
+
+---
+
+## 7. Command Delegation Rules
+
+### 7.1 Phase A (Pre-Arbiter — Layer 1)
+
+During the transition period when no Arbiter scripts exist, the agent MAY auto-execute commands matching the patterns defined in `.roo-settings.json` `settings.roo-cline.allowedCommands`. All other commands require human approval.
+
+> **Rule CMD-1:** During Layer 1 (pre-Arbiter), the Agent MAY auto-execute commands matching `.roo-settings.json` `settings.roo-cline.allowedCommands`. All other commands require human approval.
+
+### 7.2 Phase B/C (Arbiter-Owned Domains)
+
+Once an Arbiter script owns a command domain (corresponding entry in `state.json.arbiter_capabilities` is `true`), the agent MUST NOT execute the equivalent command directly. All command execution for that domain MUST be delegated to the Arbiter script.
+
+> **Rule CMD-2:** Once an Arbiter script owns a command domain (Arbiter entry in `state.json.arbiter_capabilities` = `true`), the Agent MUST NOT execute the equivalent command directly. All execution for that domain is delegated to the Arbiter script.
+
+### 7.3 Capability Transition
+
+The agent MUST read `state.json.arbiter_capabilities` on every session start. For each domain where the value is `true`, the agent treats the corresponding command patterns as permanently forbidden.
+
+> **Rule CMD-TRANSITION:** The Agent MUST read `state.json.arbiter_capabilities` on every session start. For each domain where the value is `true`, treat the corresponding command patterns as permanently forbidden. The Agent never writes to `arbiter_capabilities` — The Arbiter is the sole writer.
+
+### 7.4 Forbidden Command Patterns
+
+The following commands are **permanently forbidden** regardless of phase — they require human approval without exception:
+
+- `^(rm|mv|cp).* -rf .*$` — recursive forced deletion/move/copy
+- `^git push.*$` — any git push
+- `^git commit.*$` — any git commit
+- `^(sudo|chmod|chown).*$` — privilege escalation
+- `^(kill|killall|pkill).*$` — process termination
+- `^docker .*$` — container operations
+- `^kubectl .*$` — Kubernetes operations
+- `^terraform .*$` — infrastructure as code
+
+> **Rule CMD-3:** The above command patterns are permanently forbidden regardless of phase. They require human approval without exception.
+
+---
+
+## 8. Memory System Rules
+
+### 8.1 Hot Zone Access
+
+The agent MUST read files from `memory-bank/hot-context/` at session start. The canonical Hot Zone files are:
+
+- `activeContext.md` — current task, last result, next steps
+- `progress.md` — project-wide checkbox state
+- `decisionLog.md` — ADRs with date, context, decisions
+- `systemPatterns.md` — technical conventions
+- `productContext.md` — sprint stories
+- `RELEASE.md` — single source of truth for release tracking
+- `handoff-state.md` — inter-agent handoff data
+- `session-checkpoint.md` — 5-minute crash recovery heartbeat
+
+### 8.2 Cold Zone Prohibition
+
+The agent MUST NOT read files from `memory-bank/archive-cold/` directly. Cold Zone access is granted exclusively through the MCP tool. Archiving is handled by The Arbiter's `memory_rotator.py`.
+
+> **Rule MEM-1:** The agent MUST NOT directly read `memory-bank/archive-cold/` files. Cold Zone files are accessed exclusively through the MCP tool. Direct access floods the context window with stale data.
+
+### 8.3 Decision Logging
+
+Significant decisions MUST be permanently logged in `decisionLog.md` using the Architecture Decision Record (ADR) format:
+
+```markdown
+## ADR-{NNN}: {Decision Title}
+- **Date:** {YYYY-MM-DD}
+- **Context:** {The situation and constraints}
+- **Decision:** {What was decided}
+- **Consequences:** {What becomes easier/harder as a result}
+```
+
+> **Rule MEM-2:** Significant decisions MUST be logged in `decisionLog.md` using ADR format. Decision log entries are **persisted** (never rotated) — they accumulate across sprints as permanent architectural records.
+
+---
+
+## 9. Dependency Management Rules
+
+### 9.1 Dependency Gate (Stage 3 Entry)
+
+Before beginning Stage 3 implementation, the Developer Agent MUST:
+
+1. Read `state.json.feature_registry`
+2. Confirm all entries in the feature's `depends_on` list have `state = MERGED`
+3. If any dependency is not `MERGED`, halt and report the blocking dependency to `handoff-state.md`
+
+> **Rule DEP-1:** Before beginning Stage 3 implementation, the Developer Agent MUST read `state.json.feature_registry` and confirm all entries in `depends_on` have `state = MERGED`. If any dependency is not `MERGED`, the agent MUST halt and report the blocking dependency to `handoff-state.md`.
+
+### 9.2 Dependency Block Response
+
+When `state.json.state = DEPENDENCY_BLOCKED`:
+
+> **Rule DEP-2:** The Developer Agent MUST NOT import or call live APIs from features whose `state.json.feature_registry` entry is not `MERGED`. Stub interfaces are permitted; live imports are not.
+
+> **Rule DEP-3:** When `state.json.state = DEPENDENCY_BLOCKED`, only the Orchestrator Agent may act — its sole function is dependency monitoring. No other agent is activated while blocked.
+
+---
+
+## 10. File Access Constraints
+
+The agent MUST respect file access constraints based on its current mode:
+
+| Mode | Read/Write | Read-Only | Forbidden |
+|---|---|---|---|
+| **Architect Agent** (Stage 1) | `.feature` files | `/src` | `/tests`, `/src` write |
+| **Test Engineer Agent** (Stage 2) | `/tests/unit/` | `/src` | `/src` write, `.feature` write |
+| **Test Engineer Agent** (Stage 2b) | `/tests/integration/` | `/features/`, `/src` | `/src` write |
+| **Developer Agent** (Stage 3) | `/src` | `/tests`, `.feature` files | `/tests` write, `.feature` write |
+| **Orchestrator Agent** (Stage 4) | — | All files | All write |
+| **Reviewer/Security Agent** (Stage 4) | — | All files | All write |
+| **Documentation/Librarian Agent** (Background) | — | All files | All write |
+
+> **Rule FAC-1:** The agent MUST NOT write to directories or files outside its current mode's RW scope. Violation of file access constraints is a breach of the workbench contract.
+
+---
+
+## 11. Crash Recovery Protocol
+
+### 11.1 Session Checkpoint
+
+The Arbiter's `crash_recovery.py` daemon writes a heartbeat to `session-checkpoint.md` every 5 minutes during active work. On session restart:
+
+1. Check for `ACTIVE` status in `session-checkpoint.md`
+2. If found, read the checkpoint to recover session ID, branch, commit hash, and current task
+3. Offer to resume from the checkpoint
+
+### 11.2 Checkpoint Contents
+
+A valid checkpoint MUST contain:
+- `session_id`
+- `branch`
+- `commit_hash`
+- `current_task`
+- `status: ACTIVE`
+
+> **Rule CR-1:** After a session crash, the agent MUST offer to resume from the checkpoint before taking any new action. The checkpoint is the authoritative record of the last known session state.
+
+---
+
+## 12. Forbidden Behaviors
+
+The following behaviors are categorically forbidden:
+
+1. **Self-declaring completion** — The agent must not declare a feature "done" without Arbiter-confirmed `GREEN` state and `integration_state = GREEN`
+2. **Bypassing the test suite** — Writing code without running tests, or ignoring test failures
+3. **Writing to `state.json`** — Only The Arbiter may write to `state.json`
+4. **Skipping Phase 2 regression** — Declaring `GREEN` after Phase 1 alone
+5. **Direct Cold Zone access** — Reading `memory-bank/archive-cold/` directly
+6. **Committing during blocking states** — `REGRESSION_RED`, `INTEGRATION_RED`, or `PIVOT_IN_PROGRESS`
+7. **Live API imports from non-MERGED features** — Only stub interfaces permitted
+8. **Editing audit logs** — `docs/conversations/` files are immutable after creation
+
+> **Rule FOR-1:** Violation of any forbidden behavior constitutes a breach of the workbench contract. Such violations must be reported to the human via Roo Chat and corrected immediately.
