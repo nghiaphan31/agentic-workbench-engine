@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -67,6 +68,13 @@ def run_integration_tests():
 
     if not integration_files:
         return {"exit_code": 0, "pass_ratio": 1.0, "message": "No integration tests found"}
+
+    # Check for mock runner environment variable (testing mode)
+    mock_runner = os.environ.get("WORKBENCH_MOCK_RUNNER", "")
+    if mock_runner == "pass":
+        return {"exit_code": 0, "pass_ratio": 1.0, "files_found": len(integration_files)}
+    elif mock_runner == "fail":
+        return {"exit_code": 1, "pass_ratio": 0.0, "files_found": len(integration_files)}
 
     test_paths = [str(f) for f in integration_files]
 

@@ -77,7 +77,7 @@ def write_checkpoint(session_id, branch, commit_hash, current_task):
 
 ## Checkpoint Status
 
-**status:** ACTIVE
+status: ACTIVE
 
 ---
 
@@ -124,7 +124,7 @@ def clear_checkpoint():
 
 ## Checkpoint Status
 
-**status:** EMPTY
+status: EMPTY
 
 ---
 

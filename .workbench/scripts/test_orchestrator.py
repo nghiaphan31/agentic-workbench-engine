@@ -52,6 +52,13 @@ def run_tests(test_paths, description):
     if not test_paths:
         return 0, 1.0  # No tests = pass
 
+    # Check for mock runner environment variable (testing mode)
+    mock_runner = os.environ.get("WORKBENCH_MOCK_RUNNER", "")
+    if mock_runner == "pass":
+        return 0, 1.0
+    elif mock_runner == "fail":
+        return 1, 0.0
+
     # Try multiple test runners (language-agnostic)
     exit_code = None
     for runner in ["pytest", "vitest", "jest", "npm test", "pnpm test"]:
@@ -139,9 +146,10 @@ def run_feature_scope(req_id):
             "description": f"No tests found for {req_id} (skipped)"
         }
 
+    exit_code, pass_ratio = run_tests([str(p) for p in test_paths], f"Feature scope: {req_id}")
     return {
-        "exit_code": run_tests([str(p) for p in test_paths], f"Feature scope: {req_id}"),
-        "pass_ratio": 1.0 if exit_code == 0 else 0.0,
+        "exit_code": exit_code,
+        "pass_ratio": pass_ratio,
         "description": f"Feature scope: {req_id}"
     }
 
@@ -152,9 +160,10 @@ def run_full_regression():
     integration_tests = list(TESTS_INTEGRATION_PATH.glob("**/*.integration.spec.ts"))
     all_tests = [str(p) for p in unit_tests + integration_tests]
 
+    exit_code, pass_ratio = run_tests(all_tests, "Full regression suite")
     return {
-        "exit_code": run_tests(all_tests, "Full regression suite"),
-        "pass_ratio": 1.0 if exit_code == 0 else 0.0,
+        "exit_code": exit_code,
+        "pass_ratio": pass_ratio,
         "description": "Full regression suite"
     }
 
