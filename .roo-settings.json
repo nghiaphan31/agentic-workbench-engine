@@ -1,6 +1,6 @@
 {
   "$schema": "https://agentic-workbench.io/roo-settings.schema.json",
-  "version": "2.0",
+  "version": "2.1",
   "settings": {
     "roo-cline.allowedCommands": [
       "git log",
@@ -10,12 +10,6 @@
       "git branch -a",
       "git log --oneline -n 20",
       "git diff --stat",
-      "npm install",
-      "pnpm install",
-      "yarn",
-      "npm ci",
-      "npx biome check --write .",
-      "npx biome lint .",
       "node --version",
       "mkdir",
       "type nul",
@@ -44,24 +38,26 @@
       "chown",
       "kill",
       "killall",
-      "pkill"
+      "pkill",
+      "npm test",
+      "npx vitest",
+      "pnpm test",
+      "pytest",
+      "make test",
+      "npx gherkin-lint",
+      "cucumber",
+      "npm run test:integration",
+      "npx vitest --integration"
     ]
   },
-  "transition_map": {
-    "test_orchestrator": {
-      "revokes_from_allowedCommands": ["npm test", "npx vitest", "pnpm test", "pytest", "make test"]
-    },
-    "gherkin_validator": {
-      "revokes_from_allowedCommands": ["npx gherkin-lint", "cucumber"]
-    },
-    "memory_rotator": {
-      "revokes_from_allowedCommands": ["rm", "mv", "cp"]
-    },
-    "audit_logger": {
-      "revokes_from_allowedCommands": ["mkdir", "touch"]
-    },
-    "integration_test_runner": {
-      "revokes_from_allowedCommands": ["npm run test:integration", "npx vitest --integration"]
-    }
+  "arbiter_owned": {
+    "test_orchestrator": "python .workbench/scripts/test_orchestrator.py",
+    "integration_test_runner": "python .workbench/scripts/integration_test_runner.py",
+    "dependency_monitor": "python .workbench/scripts/dependency_monitor.py",
+    "gherkin_validator": "python .workbench/scripts/gherkin_validator.py",
+    "memory_rotator": "python .workbench/scripts/memory_rotator.py",
+    "audit_logger": "python .workbench/scripts/audit_logger.py",
+    "crash_recovery": "python .workbench/scripts/crash_recovery.py",
+    "git_hooks": "pre-commit, pre-push, post-merge, post-tag"
   }
 }

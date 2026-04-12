@@ -14,13 +14,13 @@
   "last_updated": null,
   "last_updated_by": "workbench-cli",
   "arbiter_capabilities": {
-    "test_orchestrator": false,
-    "gherkin_validator": false,
-    "memory_rotator": false,
-    "audit_logger": false,
-    "crash_recovery": false,
-    "dependency_monitor": false,
-    "integration_test_runner": false,
+    "test_orchestrator": true,
+    "gherkin_validator": true,
+    "memory_rotator": true,
+    "audit_logger": true,
+    "crash_recovery": true,
+    "dependency_monitor": true,
+    "integration_test_runner": true,
     "git_hooks": false
   }
 }
