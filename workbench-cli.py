@@ -4,7 +4,7 @@ workbench-cli.py — Agentic Workbench v2.1 Bootstrapper
 
 Owner: The Workbench (Layer 3)
 Version: 2.1
-Location: Root of agentic-workbench-template (global install via pip or PATH)
+Location: Root of agentic-workbench-engine (global install via pip or PATH)
 
 Commands:
   workbench-cli.py init <project-name>     — Initialize new application repo with workbench scaffold
@@ -278,6 +278,7 @@ def main():
         description="Agentic Workbench v2.1 CLI — Bootstrapper and Lifecycle Manager",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
+    parser.add_argument("--version", action="store_true", help="Print the CLI version and exit")
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # init command
@@ -295,6 +296,10 @@ def main():
     subparsers.add_parser("rotate", help="Trigger memory_rotator.py for sprint end")
 
     args = parser.parse_args()
+
+    if args.version:
+        print(f"Agentic Workbench CLI v{load_template_version()}")
+        sys.exit(0)
 
     if args.command == "init":
         cmd_init(args.project_name)
