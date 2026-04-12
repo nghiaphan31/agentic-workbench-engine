@@ -1,49 +1,56 @@
 #!/bin/sh
-# post-merge hook — Dependency Unblocker
+# post-merge hook — The Arbiter's Dependency Unblocker
 #
 # Owner: The Arbiter (Layer 2b)
 # Version: 2.1
 # Location: .workbench/hooks/post-merge
 #
-# This hook runs AFTER a merge is completed (PR merge to develop/main).
-# It triggers:
-#   1. dependency_monitor.py check-unblock — polls feature_registry for any
-#      features in DEPENDENCY_BLOCKED state and auto-unblocks if deps are satisfied.
+# This hook runs AFTER a successful git merge.
+# It triggers dependency_monitor.py check-unblock to automatically
+# unblock any features that were waiting on merged dependencies.
 #
-# Exit codes: 0 (always succeeds — this is informational)
+# Exit codes:
+#   0 = always allowed (non-blocking hook)
 
 set -e
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
-echo "[POST-MERGE] Running Arbiter post-merge checks..."
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo "[POST-MERGE] Merge detected — checking for unblocked features..."
 
 # =============================================================================
-# 1. RUN DEPENDENCY MONITOR ON EVERY MERGE
+# 1. RUN DEPENDENCY MONITOR UNBLOCK
 # =============================================================================
 if [ -f ".workbench/scripts/dependency_monitor.py" ]; then
-    echo "[POST-MERGE] Checking for unblocked features..."
-
-    UNBLOCK_RESULT=$(python .workbench/scripts/dependency_monitor.py check-unblock 2>&1 || true)
-
-    if echo "$UNBLOCK_RESULT" | grep -q "Unblocked:"; then
-        echo "[POST-MERGE] Dependency check complete"
-        echo "$UNBLOCK_RESULT"
+    result=$(python .workbench/scripts/dependency_monitor.py check-unblock 2>&1 || true)
+    exit_code=$?
+    
+    if echo "$result" | grep -q "unblocked\|UNBLOCKED\|feature.*READY"; then
+        echo "[POST-MERGE] ${GREEN}Features unblocked by merge:${NC}"
+        echo "$result"
+    elif echo "$result" | grep -qi "error\|failed"; then
+        echo "[POST-MERGE] ${YELLOW}WARNING: dependency_monitor.py reported an issue${NC}"
+        echo "$result"
     else
-        echo "[POST-MERGE] No features unblocked"
+        echo "[POST-MERGE] No features unblocked by this merge (ok)"
     fi
 else
-    echo "[POST-MERGE] dependency_monitor.py not found — skipping"
+    echo "[POST-MERGE] dependency_monitor.py not found — skipping unblock check"
 fi
 
 # =============================================================================
-# 2. CLEAN UP MERGED FEATURE BRANCHES (optional)
+# 2. LOG MERGE TO AUDIT TRAIL
 # =============================================================================
-# If the merge was from a feature branch, notify about cleanup
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-if [ "$CURRENT_BRANCH" = "develop" ] || [ "$CURRENT_BRANCH" = "main" ]; then
-    echo "[POST-MERGE] Merge to $CURRENT_BRANCH complete"
+if [ -f ".workbench/scripts/audit_logger.py" ]; then
+    merged_ref=$(git rev-parse --verify HEAD 2>/dev/null || echo "unknown")
+    echo "[POST-MERGE] Logging merge to audit trail..."
+    python .workbench/scripts/audit_logger.py save --session-id "post-merge-$(date +%s)" --branch "$(git branch --show-current)" 2>/dev/null || true
 fi
 
+echo "[POST-MERGE] Post-merge checks complete"
 exit 0

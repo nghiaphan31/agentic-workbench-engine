@@ -274,7 +274,7 @@ def archive_file(file_path, archive_dir):
     archive_dir.mkdir(parents=True, exist_ok=True)
 
     shutil.copy2(file_path, archive_path)
-    print(f"  Archived: {file_path.name} → {archive_path.name}")
+    print(f"  Archived: {file_path.name} -> {archive_path.name}")
 
 
 def reset_file(file_path, template_key):
@@ -308,10 +308,12 @@ def rotate_sprint(dry_run=False):
         if file_path.exists():
             if not dry_run:
                 archive_file(file_path, ARCHIVE_COLD_PATH)
+                reset_file(file_path, filename)
+                actions.append(f"Rotated: {filename}")
             else:
                 print(f"  Would archive: {filename}")
-            reset_file(file_path, filename)
-            actions.append(f"Rotated: {filename}")
+                print(f"  Would reset: {filename}")
+                actions.append(f"Would rotate: {filename}")
         else:
             print(f"  Skipped (not found): {filename}")
 
