@@ -1,0 +1,49 @@
+#!/bin/sh
+# post-merge hook — Dependency Unblocker
+#
+# Owner: The Arbiter (Layer 2b)
+# Version: 2.1
+# Location: .workbench/hooks/post-merge
+#
+# This hook runs AFTER a merge is completed (PR merge to develop/main).
+# It triggers:
+#   1. dependency_monitor.py check-unblock — polls feature_registry for any
+#      features in DEPENDENCY_BLOCKED state and auto-unblocks if deps are satisfied.
+#
+# Exit codes: 0 (always succeeds — this is informational)
+
+set -e
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+
+echo "[POST-MERGE] Running Arbiter post-merge checks..."
+
+# =============================================================================
+# 1. RUN DEPENDENCY MONITOR ON EVERY MERGE
+# =============================================================================
+if [ -f ".workbench/scripts/dependency_monitor.py" ]; then
+    echo "[POST-MERGE] Checking for unblocked features..."
+
+    UNBLOCK_RESULT=$(python .workbench/scripts/dependency_monitor.py check-unblock 2>&1 || true)
+
+    if echo "$UNBLOCK_RESULT" | grep -q "Unblocked:"; then
+        echo "[POST-MERGE] Dependency check complete"
+        echo "$UNBLOCK_RESULT"
+    else
+        echo "[POST-MERGE] No features unblocked"
+    fi
+else
+    echo "[POST-MERGE] dependency_monitor.py not found — skipping"
+fi
+
+# =============================================================================
+# 2. CLEAN UP MERGED FEATURE BRANCHES (optional)
+# =============================================================================
+# If the merge was from a feature branch, notify about cleanup
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$CURRENT_BRANCH" = "develop" ] || [ "$CURRENT_BRANCH" = "main" ]; then
+    echo "[POST-MERGE] Merge to $CURRENT_BRANCH complete"
+fi
+
+exit 0

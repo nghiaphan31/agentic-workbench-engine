@@ -1,0 +1,159 @@
+#!/bin/sh
+# post-tag hook — Compliance Snapshot Trigger
+#
+# Owner: The Arbiter (Layer 2b)
+# Version: 2.1
+# Location: .workbench/hooks/post-tag
+#
+# This hook runs AFTER a git tag is created.
+# It triggers:
+#   1. Documentation / Librarian Agent to compile compliance snapshot
+#   2. Generates timestamped PDFs and Traceability Matrix
+#   3. Deposits output into compliance-vault/ (read-only directory)
+#
+# Only triggers on version tags matching v*.*.*
+#
+# Exit codes: 0 (always succeeds — this is informational)
+
+set -e
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+
+# Get the tag that was just created
+TAG_NAME="$1"
+
+echo "[POST-TAG] Tag created: $TAG_NAME"
+
+# =============================================================================
+# 1. ONLY RUN ON VERSION TAGS
+# =============================================================================
+# Match tags like v1.0.0, v2.1.0, etc.
+if ! echo "$TAG_NAME" | grep -qE "^v[0-9]+\.[0-9]+\.[0-9]+$"; then
+    echo "[POST-TAG] Not a version tag — skipping compliance snapshot"
+    exit 0
+fi
+
+echo "[POST-TAG] Version tag detected — triggering compliance snapshot..."
+
+# =============================================================================
+# 2. CREATE COMPLIANCE VAULT
+# =============================================================================
+VAULT_DIR="$REPO_ROOT/compliance-vault"
+TIMESTAMP=$(date +%Y%m%d_%H%M)
+TAG_SAFE=$(echo "$TAG_NAME" | sed 's/\./_/g')
+SNAPSHOT_DIR="$VAULT_DIR/${TAG_NAME}_${TIMESTAMP}"
+
+mkdir -p "$SNAPSHOT_DIR"
+chmod 755 "$SNAPSHOT_DIR"
+
+echo "[POST-TAG] Creating compliance snapshot: $SNAPSHOT_DIR"
+
+# =============================================================================
+# 3. GENERATE TRACEABILITY MATRIX
+# =============================================================================
+TRACEABILITY_FILE="$SNAPSHOT_DIR/traceability_matrix.md"
+
+echo "# Compliance Traceability Matrix — $TAG_NAME" > "$TRACEABILITY_FILE"
+echo "" >> "$TRACEABILITY_FILE"
+echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$TRACEABILITY_FILE"
+echo "Tag: $TAG_NAME" >> "$TRACEABILITY_FILE"
+echo "" >> "$TRACEABILITY_FILE"
+echo "## Feature Registry" >> "$TRACEABILITY_FILE"
+echo "" >> "$TRACEABILITY_FILE"
+echo "| REQ-ID | State | Branch | Merged At |" >> "$TRACEABILITY_FILE"
+echo "|--------|-------|--------|-----------|" >> "$TRACEABILITY_FILE"
+
+# Extract feature registry from state.json
+if [ -f "state.json" ]; then
+    python -c "
+import json
+with open('state.json') as f:
+    s = json.load(f)
+registry = s.get('feature_registry', {})
+for req_id, info in sorted(registry.items()):
+    state = info.get('state', 'N/A')
+    branch = info.get('branch', 'N/A')
+    merged_at = info.get('merged_at', 'N/A')
+    print(f'| {req_id} | {state} | {branch} | {merged_at} |')
+" >> "$TRACEABILITY_FILE" 2>/dev/null || echo "| N/A | N/A | N/A | N/A |" >> "$TRACEABILITY_FILE"
+fi
+
+echo "" >> "$TRACEABILITY_FILE"
+echo "## State Snapshot" >> "$TRACEABILITY_FILE"
+echo "" >> "$TRACEABILITY_FILE"
+echo "```json" >> "$TRACEABILITY_FILE"
+cat "$REPO_ROOT/state.json" >> "$TRACEABILITY_FILE"
+echo "" >> "$TRACEABILITY_FILE"
+echo "```" >> "$TRACEABILITY_FILE"
+
+echo "[POST-TAG] Traceability matrix generated"
+
+# =============================================================================
+# 4. GENERATE FEATURE SUMMARY
+# =============================================================================
+SUMMARY_FILE="$SNAPSHOT_DIR/feature_summary.md"
+
+echo "# Feature Summary — $TAG_NAME" > "$SUMMARY_FILE"
+echo "" >> "$SUMMARY_FILE"
+echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$SUMMARY_FILE"
+echo "" >> "$SUMMARY_FILE"
+
+# List all merged .feature files
+echo "## Merged Features" >> "$SUMMARY_FILE"
+echo "" >> "$SUMMARY_FILE"
+
+MERGED_COUNT=0
+for feature_file in $(git ls-files "features/*.feature" 2>/dev/null || true); do
+    if [ -f "$feature_file" ]; then
+        # Get the REQ-ID from the file
+        REQ_ID=$(grep -m1 -oE "@REQ-[0-9]+" "$feature_file" | head -1 || echo "DRAFT")
+        echo "- $REQ_ID: $feature_file" >> "$SUMMARY_FILE"
+        MERGED_COUNT=$((MERGED_COUNT + 1))
+    fi
+done
+
+if [ "$MERGED_COUNT" -eq 0 ]; then
+    echo "(No feature files tracked)" >> "$SUMMARY_FILE"
+fi
+
+echo "" >> "$SUMMARY_FILE"
+echo "Total features: $MERGED_COUNT" >> "$SUMMARY_FILE"
+
+echo "[POST-TAG] Feature summary generated"
+
+# =============================================================================
+# 5. ARCHIVE MEMORY BANK HOT CONTEXT
+# =============================================================================
+if [ -d "memory-bank/hot-context" ]; then
+    MEMORY_ARCHIVE="$SNAPSHOT_DIR/memory_bank_archive"
+    mkdir -p "$MEMORY_ARCHIVE"
+
+    # Copy hot context files as immutable record
+    for f in memory-bank/hot-context/*.md; do
+        if [ -f "$f" ]; then
+            cp "$f" "$MEMORY_ARCHIVE/"
+        fi
+    done
+
+    echo "[POST-TAG] Memory bank archived"
+fi
+
+# =============================================================================
+# 6. MAKE VAULT READ-ONLY
+# =============================================================================
+chmod 555 "$VAULT_DIR"
+chmod -R 444 "$SNAPSHOT_DIR"
+
+echo "[POST-TAG] Compliance vault secured (read-only)"
+echo ""
+echo "[POST-TAG] ${GREEN}Compliance snapshot complete${NC}"
+echo "  Location: $SNAPSHOT_DIR"
+echo "  Contents:"
+echo "    - traceability_matrix.md"
+echo "    - feature_summary.md"
+echo "    - memory_bank_archive/ (if present)"
+echo ""
+echo "  To retrieve: ls $VAULT_DIR"
+
+exit 0
