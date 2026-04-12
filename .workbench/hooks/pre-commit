@@ -1,0 +1,129 @@
+#!/bin/sh
+# pre-commit hook — The Arbiter's Physical Barrier
+#
+# Owner: The Arbiter (Layer 2b)
+# Version: 2.1
+# Location: .workbench/hooks/pre-commit
+#
+# This hook runs BEFORE any commit is created.
+# It enforces:
+#   1. Gherkin syntax validation on staged .feature files
+#   2. Biome linting on staged source files (if biome.json exists)
+#   3. state.json integrity check (must not be modified by non-Arbiter)
+#
+# Exit codes:
+#   0 = commit allowed
+#   1 = commit blocked
+
+set -e
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+
+# Colors for output (if terminal supports it)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo "[PRE-COMMIT] Running Arbiter pre-commit checks..."
+
+# =============================================================================
+# 1. STATE.JSON INTEGRITY CHECK
+# =============================================================================
+# Ensure state.json was not modified directly by an agent (only Arbiter scripts write it)
+if git diff --cached --name-only | grep -q "^state.json$"; then
+    # Check if the modification was made by Arbiter
+    LAST_ARBITER_UPDATE=$(git log -1 --format="%an" -- state.json 2>/dev/null || echo "unknown")
+    CURRENT_AUTHOR=$(git log -1 --format="%an" 2>/dev/null || echo "unknown")
+
+    # Allow if last committer is "workbench-cli" or "arbiter" (deterministic scripts)
+    if [ "$CURRENT_AUTHOR" != "workbench-cli" ] && [ "$CURRENT_AUTHOR" != "arbiter" ]; then
+        echo "[PRE-COMMIT] ${RED}BLOCKED: Direct state.json modification detected${NC}"
+        echo "  state.json is Arbiter-owned. Only workbench-cli.py or Arbiter scripts may modify it."
+        echo "  Last Arbiter update by: $LAST_ARBITER_UPDATE"
+        echo "  Commit author: $CURRENT_AUTHOR"
+        exit 1
+    fi
+    echo "[PRE-COMMIT] state.json modified by authorized process (ok)"
+fi
+
+# =============================================================================
+# 2. GHERKIN VALIDATION ON STAGED .feature FILES
+# =============================================================================
+FEATURE_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep "\.feature$" || true)
+if [ -n "$FEATURE_FILES" ]; then
+    echo "[PRE-COMMIT] Validating staged .feature files..."
+
+    for file in $FEATURE_FILES; do
+        if [ -f "$file" ]; then
+            # Run gherkin_validator.py if it exists
+            if [ -f ".workbench/scripts/gherkin_validator.py" ]; then
+                VALIDATION_RESULT=$(python .workbench/scripts/gherkin_validator.py "$(dirname "$file")" 2>&1 || echo "VALIDATION_FAILED")
+                if echo "$VALIDATION_RESULT" | grep -q "Valid: False"; then
+                    echo "[PRE-COMMIT] ${RED}BLOCKED: Invalid .feature file: $file${NC}"
+                    echo "$VALIDATION_RESULT"
+                    exit 1
+                fi
+                echo "  $file: valid"
+            else
+                # Fallback: basic syntax check
+                if ! grep -q "Feature:" "$file"; then
+                    echo "[PRE-COMMIT] ${RED}BLOCKED: Missing 'Feature:' keyword in $file${NC}"
+                    exit 1
+                fi
+                if ! grep -qE "(Given|When|Then|And|But)" "$file"; then
+                    echo "[PRE-COMMIT] ${RED}BLOCKED: Missing Gherkin steps in $file${NC}"
+                    exit 1
+                fi
+                echo "  $file: basic syntax ok"
+            fi
+        fi
+    done
+fi
+
+# =============================================================================
+# 3. BIOME LINTING ON STAGED SOURCE FILES
+# =============================================================================
+if [ -f "biome.json" ]; then
+    SOURCE_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E "\.(ts|js|tsx|jsx|json|css)$" || true)
+    if [ -n "$SOURCE_FILES" ]; then
+        echo "[PRE-COMMIT] Running Biome linting..."
+
+        # Check if biome is available
+        if command -v npx >/dev/null 2>&1; then
+            # Only lint modified files, not all files
+            for file in $SOURCE_FILES; do
+                if [ -f "$file" ]; then
+                    LINT_RESULT=$(npx biome lint "$file" 2>&1 || true)
+                    if echo "$LINT_RESULT" | grep -qE "error|failed"; then
+                        echo "[PRE-COMMIT] ${YELLOW}WARNING: Biome lint issues in $file${NC}"
+                        echo "$LINT_RESULT"
+                        # Don't block on lint warnings — let pre-push handle strict checks
+                    fi
+                fi
+            done
+        fi
+    fi
+fi
+
+# =============================================================================
+# 4. REQUIREMENTS_LOCKED → FEATURE_GREEN TRANSITION CHECK
+# =============================================================================
+# If state.json shows FEATURE_GREEN, block until Phase 2 (regression) passes
+CURRENT_STATE=$(python -c "import json; s=json.load(open('state.json')); print(s.get('state',''))" 2>/dev/null || echo "UNKNOWN")
+if [ "$CURRENT_STATE" = "FEATURE_GREEN" ]; then
+    REGRESSION_STATE=$(python -c "import json; s=json.load(open('state.json')); print(s.get('regression_state',''))" 2>/dev/null || echo "UNKNOWN")
+    if [ "$REGRESSION_STATE" = "REGRESSION_RED" ]; then
+        echo "[PRE-COMMIT] ${RED}BLOCKED: Regression detected — cannot commit while REGRESSION_RED${NC}"
+        echo "  Run: python .workbench/scripts/test_orchestrator.py run --scope full --set-state"
+        echo "  Fix regressions before committing."
+        exit 1
+    fi
+fi
+
+# =============================================================================
+# ALL CHECKS PASSED
+# =============================================================================
+echo "[PRE-COMMIT] ${GREEN}All checks passed — commit allowed${NC}"
+exit 0
