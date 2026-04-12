@@ -1,0 +1,67 @@
+{
+  "$schema": "https://agentic-workbench.io/roo-settings.schema.json",
+  "version": "2.0",
+  "settings": {
+    "roo-cline.allowedCommands": [
+      "git log",
+      "git diff",
+      "git show",
+      "git status",
+      "git branch -a",
+      "git log --oneline -n 20",
+      "git diff --stat",
+      "npm install",
+      "pnpm install",
+      "yarn",
+      "npm ci",
+      "npx biome check --write .",
+      "npx biome lint .",
+      "node --version",
+      "mkdir",
+      "type nul",
+      "cat",
+      "grep",
+      "find",
+      "ls -la",
+      "ls",
+      "pwd",
+      "echo",
+      "head -n 100",
+      "tail -n 100",
+      "wc -l"
+    ],
+    "roo-cline.deniedCommands": [
+      "git push",
+      "git commit",
+      "git merge",
+      "git rebase",
+      "rm -rf",
+      "docker",
+      "kubectl",
+      "terraform",
+      "sudo",
+      "chmod",
+      "chown",
+      "kill",
+      "killall",
+      "pkill"
+    ]
+  },
+  "transition_map": {
+    "test_orchestrator": {
+      "revokes_from_allowedCommands": ["npm test", "npx vitest", "pnpm test", "pytest", "make test"]
+    },
+    "gherkin_validator": {
+      "revokes_from_allowedCommands": ["npx gherkin-lint", "cucumber"]
+    },
+    "memory_rotator": {
+      "revokes_from_allowedCommands": ["rm", "mv", "cp"]
+    },
+    "audit_logger": {
+      "revokes_from_allowedCommands": ["mkdir", "touch"]
+    },
+    "integration_test_runner": {
+      "revokes_from_allowedCommands": ["npm run test:integration", "npx vitest --integration"]
+    }
+  }
+}
