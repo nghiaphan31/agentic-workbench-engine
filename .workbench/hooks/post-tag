@@ -51,7 +51,6 @@ if echo "$tag_name" | grep -qE '^v[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?$'; t
     else
         echo "[POST-TAG] compliance_snapshot.py not found — compliance snapshot not yet automated"
         echo "  Manual compliance snapshot required for release $tag_name"
-        echo "  TODO: Implement .workbench/scripts/compliance_snapshot.py"
     fi
     
     # =============================================================================

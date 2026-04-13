@@ -29,7 +29,22 @@ NC='\033[0m' # No Color
 echo "[PRE-COMMIT] Running Arbiter pre-commit checks..."
 
 # =============================================================================
-# 0. SKIP VALIDATION FLAG
+# 0. ARBITER COMPLIANCE CHECK (GAP-15: check-session)
+# =============================================================================
+# Run arbiter_check.py check-session for lightweight startup compliance scan
+if [ -f ".workbench/scripts/arbiter_check.py" ]; then
+    echo "[PRE-COMMIT] Running Arbiter compliance scan..."
+    ARBITER_RESULT=$(python .workbench/scripts/arbiter_check.py check-session 2>&1 || echo "CHECK_FAILED")
+    if echo "$ARBITER_RESULT" | grep -q "CRITICAL"; then
+        echo "[PRE-COMMIT] ${RED}BLOCKED: Critical compliance violations detected${NC}"
+        echo "$ARBITER_RESULT"
+        exit 1
+    fi
+    echo "[PRE-COMMIT] Compliance scan passed (ok)"
+fi
+
+# =============================================================================
+# 1. SKIP VALIDATION FLAG
 # =============================================================================
 # Allow bypassing pre-commit checks via git commit --no-verify or environment variable
 # This is useful for emergency hotfixes or recovery scenarios

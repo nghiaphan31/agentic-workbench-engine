@@ -476,7 +476,9 @@ CHECK_REGISTRY = {
     "FOR-1":          check_forbidden_self_declaration,
 }
 
-# Checks run in check-session mode (lightweight — CRITICAL only + CR-1)
+# Checks run in check-session mode (lightweight — 5 critical rules for session startup)
+# NOTE: SESSION_CHECKS includes CR-1 which is WARNING level (stale checkpoint detection)
+#       SLC-2, MEM-1, DEP-3, FAC-1 are CRITICAL level
 SESSION_CHECKS = ["SLC-2", "MEM-1", "DEP-3", "FAC-1", "CR-1"]
 
 

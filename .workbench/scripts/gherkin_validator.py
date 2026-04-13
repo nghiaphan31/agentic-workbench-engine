@@ -11,8 +11,9 @@ Parses @REQ-NNN and @depends-on: tags.
 Cross-references REQ-IDs against state.json.feature_registry.
 
 Usage:
-  python gherkin_validator.py validate features/
-  python gherkin_validator.py validate _inbox/  # @draft files, no REQ-ID requirement
+  python gherkin_validator.py features/
+  python gherkin_validator.py _inbox/  # @draft files, no REQ-ID requirement
+  python gherkin_validator.py --allow-draft _inbox/
 """
 
 import argparse
