@@ -1,5 +1,12 @@
 {
   "version": "2.1",
+  "mcpServers": {
+    "archive-query": {
+      "command": "python",
+      "args": [".workbench/mcp/archive_query_server.py"],
+      "description": "Cold Zone archive query — search and read archived memory-bank files"
+    }
+  },
   "settings": {
     "roo-cline.allowedCommands": [
       "git log",

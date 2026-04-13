@@ -66,7 +66,17 @@ def validate_feature_file(file_path, require_req_id=True):
             registry = state.get("feature_registry", {})
             for dep_id in depends_on_list:
                 if dep_id not in registry:
-                    warnings.append(f"@depends-on references {dep_id} but it is not in feature_registry (may be planned)")
+                    # Dependency not yet registered — warn only (may be planned)
+                    warnings.append(
+                        f"@depends-on references {dep_id} but it is not in feature_registry (may be planned)"
+                    )
+                else:
+                    dep_state = registry[dep_id].get("state", "UNKNOWN")
+                    if dep_state != "MERGED":
+                        # Dependency exists but is not MERGED — this is a blocking error
+                        errors.append(
+                            f"@depends-on references {dep_id} but its state is '{dep_state}' (must be MERGED before Stage 3)"
+                        )
 
     # Check for Given/When/Then structure
     has_scenario = "Scenario:" in content or "Scenario Outline:" in content

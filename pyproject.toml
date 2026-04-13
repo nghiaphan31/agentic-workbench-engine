@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "agentic-workbench-cli"
+version = "2.1.0"
+description = "Agentic Workbench v2 — Developer Productivity Framework for Multi-Agent Systems"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Agentic Workbench Team", email = "team@agentic-workbench.dev"}
+]
+keywords = [
+    "agentic",
+    "workbench",
+    "multi-agent",
+    "developer-tools",
+    "productivity",
+    "automation",
+    "clinerules",
+    "arbiter",
+    "testing",
+    "tdd"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Quality Assurance",
+]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+workbench-cli = "workbench_cli:main"
+
+[project.urls]
+Homepage = "https://github.com/agentic-workbench/agentic-workbench-cli"
+Documentation = "https://agentic-workbench-cli.readthedocs.io"
+Repository = "https://github.com/agentic-workbench/agentic-workbench-cli"
+Issues = "https://github.com/agentic-workbench/agentic-workbench-cli/issues"
+
+[tool.setuptools]
+packages = ["workbench_cli"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.json", ".workbench/**"]

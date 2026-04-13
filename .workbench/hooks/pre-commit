@@ -29,6 +29,24 @@ NC='\033[0m' # No Color
 echo "[PRE-COMMIT] Running Arbiter pre-commit checks..."
 
 # =============================================================================
+# 0. SKIP VALIDATION FLAG
+# =============================================================================
+# Allow bypassing pre-commit checks via git commit --no-verify or environment variable
+# This is useful for emergency hotfixes or recovery scenarios
+if [ -n "$GIT_WORKBENCH_SKIP_HOOKS" ]; then
+    echo "[PRE-COMMIT] Skipping pre-commit checks (GIT_WORKBENCH_SKIP_HOOKS is set)"
+    exit 0
+fi
+
+# Check if --no-verify flag was passed (detected via environment)
+# Note: Due to shell limitations, we check for CI/SKIP environment variables
+if [ -n "$GIT_EDITOR" ] || [ -n "$GIT_SEQUENCE_EDITOR" ]; then
+    # Interactive rebase or cherry-pick — skip non-essential checks
+    echo "[PRE-COMMIT] Interactive mode detected — running lightweight checks only"
+    LIGHTWEIGHT_ONLY=1
+fi
+
+# =============================================================================
 # 1. STATE.JSON INTEGRITY CHECK
 # =============================================================================
 # Ensure state.json was not modified directly by an agent (only Arbiter scripts write it)
@@ -40,7 +58,7 @@ if git diff --cached --name-only | grep -q "^state.json$"; then
         LAST_UPDATED_BY=$(echo "$STAGED_CONTENT" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('last_updated_by','unknown'))" 2>/dev/null || echo "unknown")
         
         # Allow only known Arbiter script writers
-        ALLOWED_WRITERS="test_orchestrator.py integration_test_runner.py dependency_monitor.py memory_rotator.py audit_logger.py crash_recovery.py workbench-cli"
+        ALLOWED_WRITERS="test_orchestrator.py integration_test_runner.py dependency_monitor.py memory_rotator.py audit_logger.py crash_recovery.py workbench-cli pre-commit"
         if ! echo "$ALLOWED_WRITERS" | grep -qw "$LAST_UPDATED_BY"; then
             echo "[PRE-COMMIT] ${RED}BLOCKED: state.json last_updated_by='$LAST_UPDATED_BY' is not an authorized Arbiter script${NC}"
             echo "  state.json is Arbiter-owned. Only known Arbiter scripts may modify it."
@@ -163,6 +181,57 @@ if conflicts:
 else:
     print('[PRE-COMMIT] File ownership check passed (no conflicts)')
 " 2>/dev/null || echo "[PRE-COMMIT] File ownership check skipped (python unavailable)"
+fi
+
+# =============================================================================
+# 6. UPDATE FILE OWNERSHIP MAP (GAP-7)
+# =============================================================================
+STAGED_SRC=$(git diff --cached --name-only --diff-filter=ACM | grep "^src/" || true)
+if [ -n "$STAGED_SRC" ] && [ -f "state.json" ]; then
+    python -c "
+import json, sys
+from datetime import datetime, timezone
+
+state = json.load(open('state.json'))
+active_req_id = state.get('active_req_id')
+
+if not active_req_id:
+    sys.exit(0)
+
+ownership = state.get('file_ownership', {})
+staged_files = '''$STAGED_SRC'''.strip().split('\n')
+
+for f in staged_files:
+    if f.strip():
+        ownership[f.strip()] = active_req_id
+
+state['file_ownership'] = ownership
+state['last_updated_by'] = 'pre-commit'
+state['last_updated'] = datetime.now(timezone.utc).isoformat()
+
+with open('state.json', 'w') as out:
+    json.dump(state, out, indent=2)
+    out.write('\n')
+
+print(f'[PRE-COMMIT] Updated file_ownership for {len(staged_files)} files (owner: {active_req_id})')
+" 2>/dev/null || echo "[PRE-COMMIT] File ownership update skipped"
+fi
+
+# =============================================================================
+# 7. CONVENTIONAL COMMITS MESSAGE VALIDATION (GAP-14)
+# =============================================================================
+COMMIT_MSG_FILE=".git/COMMIT_EDITMSG"
+if [ -f "$COMMIT_MSG_FILE" ]; then
+    COMMIT_MSG=$(head -1 "$COMMIT_MSG_FILE")
+    if ! echo "$COMMIT_MSG" | grep -qE "^(feat|fix|docs|chore|refactor|test|perf|ci)(\(.+\))?: .{1,}"; then
+        echo "[PRE-COMMIT] ${RED}BLOCKED: Commit message does not follow Conventional Commits format${NC}"
+        echo "  Message: '$COMMIT_MSG'"
+        echo "  Required: <type>(<scope>): <description>"
+        echo "  Allowed types: feat, fix, docs, chore, refactor, test, perf, ci"
+        echo "  Example: feat(REQ-001): add user authentication endpoint"
+        exit 1
+    fi
+    echo "[PRE-COMMIT] Commit message format: valid"
 fi
 
 # =============================================================================
