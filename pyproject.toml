@@ -45,7 +45,7 @@ dev = [
 ]
 
 [project.scripts]
-workbench-cli = "workbench_cli:main"
+workbench-cli = "workbench_cli.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/agentic-workbench/agentic-workbench-cli"

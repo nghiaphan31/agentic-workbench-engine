@@ -121,6 +121,8 @@ The agent MUST NOT:
 - Commit changes to `state.json` directly (only the Arbiter writes to `state.json`)
 
 > **Rule CMT-1:** All commits MUST be made on a `feature/` or `lab/` branch. Direct commits to `main` or `develop` are physically blocked by the `pre-commit` and `pre-push` Git hooks.
+>
+> **Exception:** `workbench-cli.py init` and `workbench-cli.py upgrade` are permitted to commit directly to `main` as bootstrapping operations.
 
 ---
 
@@ -236,6 +238,8 @@ The agent MUST NOT read files from `memory-bank/archive-cold/` directly. Cold Zo
 >   - `search_archive(query)` — find relevant archived files (returns max 3 results with excerpts)
 >   - `read_archive_file(filename, max_lines=100)` — read a specific file (truncated)
 > Direct access floods the context window with stale data.
+>
+> **Exception:** The Documentation/Librarian Agent may read Cold Zone files directly as part of its documentation compilation mandate.
 
 ### 8.3 Decision Logging
 
