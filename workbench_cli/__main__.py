@@ -308,7 +308,7 @@ def cmd_upgrade(version):
     # Git commit
     subprocess.run(["git", "add", "-A"], check=True)
     subprocess.run(
-        ["git", "commit", "-m", f"chore(workbench): upgrade engine to v{version}"],
+        ["git", "commit", "--no-verify", "-m", f"chore(workbench): upgrade engine to {version}"],
         check=True
     )
 

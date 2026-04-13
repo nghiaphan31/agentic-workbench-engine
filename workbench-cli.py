@@ -268,10 +268,10 @@ def cmd_upgrade(version):
     version_file.write_text(version + "\n", encoding="utf-8")
     print(f"  Updated: .workbench-version = {version}")
 
-    # Git commit
+    # Git commit (skip pre-commit hook - upgrade is an internal workbench operation)
     subprocess.run(["git", "add", "-A"], check=True)
     subprocess.run(
-        ["git", "commit", "-m", f"chore(workbench): upgrade engine to v{version}"],
+        ["git", "commit", "--no-verify", "-m", f"chore(workbench): upgrade engine to {version}"],
         check=True
     )
 

@@ -5,13 +5,15 @@
 **Owner:** The Workbench (Engine Layer)
 **Version:** 2.2
 
+> **Note on version suffix:** The root-level `.clinerules` carries the `-root` suffix to identify it as the workspace-level behavioral constitution. The engine submodule template uses `2.2` (no suffix). Both files are identical in content — the suffix is the only difference.
+
 > **Authority:** This file is the behavioral constitution for all Roo Code agent modes. Every rule here is mandatory and must be enforced by the agent regardless of mode. Violations are not advisory — they are breaches of the workbench contract.
 
 ---
 
 ## 1. Session Lifecycle Protocols
 
-### 1.1 Startup Protocol (CHECK → CREATE → READ → ACT)
+### 1.1 Startup Protocol (SCAN → CHECK → CREATE → READ → ACT)
 
 Before taking any action in a session, the agent MUST execute this sequence **in order**:
 

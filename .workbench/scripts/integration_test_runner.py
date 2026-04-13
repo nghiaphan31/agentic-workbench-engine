@@ -145,7 +145,7 @@ def main():
             if result["exit_code"] == 0:
                 state["integration_state"] = "GREEN"
             else:
-                state["integration_state"] = "RED"
+                state["integration_state"] = "INTEGRATION_RED"
             state["integration_test_pass_ratio"] = result["pass_ratio"]
             state["last_updated"] = datetime.now(timezone.utc).isoformat()
             state["last_updated_by"] = "integration_test_runner.py"
