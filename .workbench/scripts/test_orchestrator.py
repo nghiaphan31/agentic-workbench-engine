@@ -143,6 +143,7 @@ def run_feature_scope(req_id):
         return {
             "exit_code": 0,
             "pass_ratio": 1.0,
+            "failures": [],
             "description": f"No tests found for {req_id} (skipped)"
         }
 
@@ -150,6 +151,7 @@ def run_feature_scope(req_id):
     return {
         "exit_code": exit_code,
         "pass_ratio": pass_ratio,
+        "failures": [],
         "description": f"Feature scope: {req_id}"
     }
 
@@ -164,6 +166,7 @@ def run_full_regression():
     return {
         "exit_code": exit_code,
         "pass_ratio": pass_ratio,
+        "failures": [],
         "description": "Full regression suite"
     }
 
@@ -224,7 +227,7 @@ def main():
                 else:
                     state["state"] = "REGRESSION_RED"
                     state["regression_state"] = "REGRESSION_RED"
-                    state["regression_failures"] = []  # TODO: parse from test output
+                    state["regression_failures"] = result.get("failures", [])
                 state["full_suite_pass_ratio"] = pass_ratio
                 state["last_updated"] = datetime.now(timezone.utc).isoformat()
                 state["last_updated_by"] = "test_orchestrator.py"
