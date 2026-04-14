@@ -65,5 +65,9 @@
     "audit_logger": "python .workbench/scripts/audit_logger.py",
     "crash_recovery": "python .workbench/scripts/crash_recovery.py",
     "git_hooks": "pre-commit, pre-push, post-merge, post-tag"
+  },
+  "_metadata": {
+    "note": "arbiter_owned scripts bypass deniedCommands — they are deterministic Arbiter programs, not probabilistic agent actions",
+    "allowedCommands_note": "This is the MINIMAL template for application repos. Lab-specific overrides (e.g., npm install, pnpm) are in root .roo-settings.json"
   }
 }
