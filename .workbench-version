@@ -1,1 +1,5 @@
+# Agentic Workbench Engine Template Version
+# This tracks the version of the engine template (workbench-cli.py, .clinerules, .roomodes, etc.)
+# NOT the same as the behavioral constitution version in .clinerules (which is 2.2)
+
 2.1

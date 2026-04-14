@@ -8,7 +8,7 @@ Location: .workbench/scripts/memory_rotator.py
 
 Applies per-file rotation policy at sprint end:
   Rotate (archive, then reset): activeContext.md, progress.md, productContext.md
-  Persist (never rotate): decisionLog.md, systemPatterns.md, RELEASE.md
+  Persist (never rotate): decisionLog.md, systemPatterns.md, RELEASE.md, narrativeRequest.md
   Reset (overwrite, no archive): handoff-state.md, session-checkpoint.md
 
 Usage:
@@ -32,12 +32,12 @@ ROTATION_POLICY = {
         "activeContext.md",
         "progress.md",
         "productContext.md",
-        "narrativeRequest.md",
     ],
     "persist": [  # Never rotate
         "decisionLog.md",
         "systemPatterns.md",
         "RELEASE.md",
+        "narrativeRequest.md",
     ],
     "reset": [  # Overwrite to empty template, no archive
         "handoff-state.md",
