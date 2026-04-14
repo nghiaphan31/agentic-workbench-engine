@@ -56,7 +56,7 @@
       "npx vitest --integration"
     ]
   },
-  "arbiter_owned": {
+  "arbiter_scripts": {
     "test_orchestrator": "python .workbench/scripts/test_orchestrator.py",
     "integration_test_runner": "python .workbench/scripts/integration_test_runner.py",
     "dependency_monitor": "python .workbench/scripts/dependency_monitor.py",
@@ -67,7 +67,7 @@
     "git_hooks": "pre-commit, pre-push, post-merge, post-tag"
   },
   "_metadata": {
-    "note": "arbiter_owned scripts bypass deniedCommands — they are deterministic Arbiter programs, not probabilistic agent actions",
+    "note": "arbiter_scripts bypass deniedCommands — they are deterministic Arbiter programs, not probabilistic agent actions",
     "allowedCommands_note": "This is the MINIMAL template for application repos. Lab-specific overrides (e.g., npm install, pnpm) are in root .roo-settings.json"
   }
 }
