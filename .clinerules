@@ -20,6 +20,12 @@ Before taking any action in a session, the agent MUST execute this sequence **in
 0. **SCAN** — Run `python .workbench/scripts/arbiter_check.py check-session`
    - If any CRITICAL violations: resolve before proceeding
    - If any WARNING violations: acknowledge and log to `handoff-state.md`
+   - **Lightweight session scan (check-session)** checks exactly 5 rules:
+     - **SLC-2**: Audit log immutability — docs/conversations/ files not tampered
+     - **MEM-1**: Cold Zone prohibition — no direct access to archive-cold/
+     - **DEP-3**: Dependency block response — only Orchestrator acts when DEPENDENCY_BLOCKED
+     - **FAC-1**: File access constraints — agent operating within allowed RW scope
+     - **CR-1**: Crash recovery — checkpoint exists and contains required fields
 1. **CHECK** for `activeContext.md` in `memory-bank/hot-context/`
 2. **CREATE** `activeContext.md` from the template if it does not exist
 3. **READ** `activeContext.md` completely
@@ -116,15 +122,17 @@ All commit messages MUST adhere to the Conventional Commits format:
 ### 4.2 Forbidden Commit Actions
 
 The agent MUST NOT:
-- Commit directly to `main` or `develop`
+- Commit directly to `main` or `develop` (for feature work)
 - Commit on a branch that has already been merged to `main`
 - Use `git merge --delete-branch` when merging PRs
 - Commit without a Conventional Commits-compliant message
 - Commit changes to `state.json` directly (only the Arbiter writes to `state.json`)
 
-> **Rule CMT-1:** All commits MUST be made on a `feature/` or `lab/` branch. Direct commits to `main` or `develop` are physically blocked by the `pre-commit` and `pre-push` Git hooks.
+> **Rule CMT-1:** All **feature commits** MUST be made on a `feature/` or `lab/` branch. Direct commits to `main` or `develop` are physically blocked by the `pre-commit` and `pre-push` Git hooks.
 >
-> **Exception:** `workbench-cli.py init` and `workbench-cli.py upgrade` are permitted to commit directly to `main` as bootstrapping operations.
+> **Trivial chore commits** (e.g., documentation fixes, config updates) MAY commit directly to `develop` if approved by human.
+>
+> **Bootstrap Exception:** `workbench-cli.py init` and `workbench-cli.py upgrade` are permitted to commit directly to `main` as bootstrapping operations when initializing NEW repos or performing version upgrades.
 
 ---
 
@@ -145,16 +153,17 @@ The agent MUST read `state.json` before taking any action, every session start:
 
 During Stage 3 (Developer Agent), the agent MUST understand the two-phase test loop:
 
-**Phase 1 — Feature Scope Run:**
+**Test Phase 1 — Feature Scope Run:**
 - Runs only `/tests/unit/{REQ-NNN}-*.spec.ts` for the active feature
 - Fast feedback loop for iteration
 
-**Phase 2 — Full Regression Run:**
+**Test Phase 2 — Full Regression Run:**
 - Runs ALL `/tests/unit/**/*.spec.ts` plus ALL `/tests/integration/**/*.spec.ts`
-- Triggered after every Phase 1 GREEN confirmation
+- Triggered after every Test Phase 1 GREEN confirmation
 - Confirms no previously passing test has been broken
+- When Test Phase 2 passes, `state.json.regression_state` is set to `CLEAN`
 
-> **Rule STM-2:** A feature is not `GREEN` until Phase 2 (full regression) passes. The agent must not self-declare completion after Phase 1 alone.
+> **Rule STM-2:** A feature is not `GREEN` until Test Phase 2 (full regression) passes and `regression_state = CLEAN`. The agent must not self-declare completion after Test Phase 1 alone.
 
 ---
 
@@ -230,6 +239,7 @@ The agent MUST read files from `memory-bank/hot-context/` at session start. The 
 - `RELEASE.md` — single source of truth for release tracking
 - `handoff-state.md` — inter-agent handoff data
 - `session-checkpoint.md` — 5-minute crash recovery heartbeat
+- `narrativeRequest.md` — Phase 0 output; authoritative source narrative for current sprint feature work
 
 ### 8.2 Cold Zone Prohibition
 
@@ -289,9 +299,9 @@ The agent MUST respect file access constraints based on its current mode:
 |---|---|---|---|
 | **Architect Agent** (Stage 1) | `.feature` files | `/src` | `/tests`, `/src` write |
 | **Test Engineer Agent** (Stage 2) | `/tests/unit/` | `/src` | `/src` write, `.feature` write |
-| **Test Engineer Agent** (Stage 2b) | `/tests/integration/` | `/features/`, `/src` | `/src` write |
+| **Test Engineer Agent** (Stage 2b) | `/tests/integration/` | `/features/`, `/src`, `/tests/unit/` | `/src` write |
 | **Developer Agent** (Stage 3) | `/src` | `/tests`, `.feature` files | `/tests` write, `.feature` write |
-| **Orchestrator Agent** (Stage 4) | — | All files | All write |
+| **Orchestrator Agent** (Stage 4) | `handoff-state.md` | All files | All write except `handoff-state.md` |
 | **Reviewer/Security Agent** (Stage 4) | — | All files | All write |
 | **Documentation/Librarian Agent** (Background) | — | All files | All write |
 
@@ -384,3 +394,36 @@ Chunking **is required** for:
 - Any markdown document written as a new file or complete replacement
 - Any configuration file written as a complete replacement
 - Any report, plan, or specification document
+
+---
+
+## 14. Pivot Protocol (Mid-Stage Requirements Change)
+
+### 14.1 When a Pivot Occurs
+
+A pivot is triggered when a human submits a Delta Prompt requiring changes to an **in-flight feature** (not a new feature). This differs from the Inbox flow (which handles new, lower-priority ideas).
+
+**Valid Pivot Triggers:**
+- During Stage 1: Human wants to modify requirements mid-iteration
+- During Stage 3: Human wants to change behavior of code in development
+
+### 14.2 Pivot State Transitions
+
+| From State | Trigger | To State |
+|---|---|---|
+| `STAGE_1_ACTIVE` | Human submits Delta Prompt | `PIVOT_IN_PROGRESS` |
+| `RED` | Human submits Delta Prompt | `PIVOT_IN_PROGRESS` |
+| `PIVOT_IN_PROGRESS` | Human approves Git diff (HITL 1.5) | `PIVOT_APPROVED` |
+| `PIVOT_APPROVED` | Arbiter invalidates tests and re-runs | `RED` |
+
+### 14.3 Pivot Workflow
+
+1. **Delta Injection:** The Architect Agent analyzes the blast radius and modifies existing `.feature` scenarios
+2. **Branch Creation:** Arbiter creates a `pivot/{ticket-id}` branch from the current working branch
+3. **HITL 1.5:** Human reviews the Git diff and approves changes
+4. **Test Invalidation:** Arbiter flags test files linked to modified Gherkin and sets `state.json` to `RED`
+5. **Remediation:** Developer Agent refactors source code until tests pass
+
+> **Rule PVT-1:** During `PIVOT_IN_PROGRESS`, no commits may be made to the feature branch except the pivot delta commits.
+
+> **Rule PVT-2:** Only the Architect Agent may initiate a pivot during Stage 1; the Developer Agent may request a pivot but requires human approval.
