@@ -238,10 +238,17 @@ def cmd_upgrade(version):
     print(f"[WORKBENCH-CLI] Upgrading workbench to version {version}")
     print(f"  Current state: {current_state} (safe to upgrade)")
 
-    # Backup state.json
+    # Backup state.json (before any modifications)
     state_backup = repo_path / "state.json.bak"
     shutil.copy2(repo_path / "state.json", state_backup)
     print(f"  Backed up: state.json -> state.json.bak")
+
+    # Write UPGRADE_IN_PROGRESS intermediate state (per spec)
+    state["state"] = "UPGRADE_IN_PROGRESS"
+    state["last_updated"] = datetime.now(timezone.utc).isoformat()
+    state["last_updated_by"] = "workbench-cli"
+    _write_state(repo_path, state)
+    print(f"  State: UPGRADE_IN_PROGRESS")
 
     # Overwrite engine files
     for engine_file in ENGINE_FILES:
@@ -259,14 +266,22 @@ def cmd_upgrade(version):
             shutil.copytree(src, dst, dirs_exist_ok=True)
             print(f"  Upgraded: {engine_dir}")
 
-    # Restore state.json (Arbiter-owned, never overwritten)
-    shutil.move(state_backup, repo_path / "state.json")
-    print(f"  Restored: state.json (Arbiter-owned, unchanged)")
-
     # Update .workbench-version
     version_file = repo_path / ".workbench-version"
     version_file.write_text(version + "\n", encoding="utf-8")
     print(f"  Updated: .workbench-version = {version}")
+
+    # Restore state.json (Arbiter-owned, never overwritten)
+    shutil.move(state_backup, repo_path / "state.json")
+    print(f"  Restored: state.json (Arbiter-owned, unchanged)")
+
+    # Reset to INIT state after upgrade (Arbiter-owned, reset after upgrade)
+    state = load_state_json(repo_path)
+    state["state"] = "INIT"
+    state["last_updated"] = datetime.now(timezone.utc).isoformat()
+    state["last_updated_by"] = "workbench-cli"
+    _write_state(repo_path, state)
+    print(f"  State: INIT (reset after upgrade)")
 
     # Git commit (skip pre-commit hook - upgrade is an internal workbench operation)
     subprocess.run(["git", "add", "-A"], check=True)
