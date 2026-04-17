@@ -357,7 +357,7 @@ def cmd_status():
     check_script = repo_path / ".workbench" / "scripts" / "arbiter_check.py"
     if check_script.exists():
         print()
-        subprocess.run(["python", str(check_script), "check"], cwd=repo_path)
+        subprocess.run(["python3", str(check_script), "check"], cwd=repo_path)
 
 
 def cmd_rotate():
@@ -371,7 +371,7 @@ def cmd_rotate():
         sys.exit(1)
 
     print(f"[WORKBENCH-CLI] Running memory rotator...")
-    result = subprocess.run(["python", str(rotator_script), "rotate"], cwd=repo_path)
+    result = subprocess.run(["python3", str(rotator_script), "rotate"], cwd=repo_path)
     sys.exit(result.returncode)
 
 
@@ -435,7 +435,7 @@ def cmd_lock_requirements(req_id):
     validator = repo_path / ".workbench" / "scripts" / "gherkin_validator.py"
     if validator.exists():
         result = subprocess.run(
-            ["python", str(validator), str(features_dir)],
+            ["python3", str(validator), str(features_dir)],
             cwd=repo_path, capture_output=True, text=True
         )
         if result.returncode != 0:
