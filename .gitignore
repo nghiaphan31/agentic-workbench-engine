@@ -16,3 +16,7 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Keep MCP binaries (self-contained workbench)
+!.workbench/bin/codebase-memory-mcp
+!.workbench/bin/install.sh

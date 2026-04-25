@@ -7,9 +7,9 @@
       "description": "Cold Zone archive query — search and read archived memory-bank files"
     },
     "codebase-memory": {
-      "command": "node",
-      "args": ["./node_modules/@codebase-memory/mcp-server/dist/index.js"],
-      "description": "Codebase indexing and search — enables AI to understand codebase structure"
+      "command": ".workbench/bin/codebase-memory-mcp",
+      "args": [],
+      "description": "Codebase indexing and search via SQLite graph — DeusData codebase-memory-mcp v0.6.0"
     }
   },
   "settings": {
