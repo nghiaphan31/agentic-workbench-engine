@@ -48,19 +48,26 @@ def save_state(state):
 
 
 def run_tests(test_paths, description):
-    """Run a list of test paths and return (exit_code, pass_ratio)."""
+    """Run a list of test paths and return (exit_code, pass_ratio, failures)."""
     if not test_paths:
-        return 0, 1.0  # No tests = pass
+        return 0, 1.0, []  # No tests = pass
 
     # Check for mock runner environment variable (testing mode)
     mock_runner = os.environ.get("WORKBENCH_MOCK_RUNNER", "")
     if mock_runner == "pass":
-        return 0, 1.0
+        return 0, 1.0, []
     elif mock_runner == "fail":
-        return 1, 0.0
+        return 1, 0.0, [{"test": "mock_test", "file": "mock", "error": "Mock failure for testing"}]
 
     # Try multiple test runners (language-agnostic)
     exit_code = None
+    stdout = ""
+    stderr = ""
+
+    # GAP-7 FIX: Actually capture test failures from pytest output
+    # Previously failures was always [] because we never parsed test output
+    failures = []
+
     for runner in ["pytest", "vitest", "jest", "npm test", "pnpm test"]:
         if runner in ["pytest"]:
             result = subprocess.run(
@@ -69,6 +76,12 @@ def run_tests(test_paths, description):
                 text=True,
                 timeout=300
             )
+            # GAP-7 FIX: Parse pytest output to extract actual failure details
+            # Parse lines like "FAILED test_file.py::test_name - Error message"
+            if result.stdout or result.stderr:
+                stdout = result.stdout
+                stderr = result.stderr
+                failures = _parse_pytest_failures(stdout + "\n" + stderr)
         elif runner in ["vitest", "jest"]:
             result = subprocess.run(
                 ["npx", runner, "--reporter=json", "--outputFile=test-results.json"] + test_paths,
@@ -100,7 +113,48 @@ def run_tests(test_paths, description):
         )
         exit_code = result.returncode
 
-    return exit_code, 1.0 if exit_code == 0 else 0.0
+    return exit_code, 1.0 if exit_code == 0 else 0.0, failures
+
+
+def _parse_pytest_failures(output):
+    """GAP-7 FIX: Parse pytest output to extract failure details.
+    
+    Parses lines like:
+    FAILED tests/unit/REQ-001-test.spec.ts::test_name - AssertionError: expected 1 got 2
+    ERROR tests/unit/REQ-002-test.spec.ts::test_name - Some error
+    
+    Returns a list of failure dicts with test name, file, and error message.
+    """
+    failures = []
+    # Match FAILED or ERROR lines from pytest verbose output
+    # Format: FAILED path/to/file.py::test_name - error message
+    import re
+    pattern = r'^(FAILED|ERROR)\s+([^\s\[].+?)(?:\s+-|\s*$)'
+    
+    for line in output.split('\n'):
+        match = re.match(pattern, line.strip())
+        if match:
+            status = match.group(1)
+            location = match.group(2).strip()
+            
+            # Extract file and test name from "path/to/file.py::test_name"
+            if '::' in location:
+                file_path, test_name = location.rsplit('::', 1)
+            else:
+                file_path = location
+                test_name = "unknown"
+            
+            # Get the error message (usually on the same line after " - ")
+            error_match = re.search(r'-\s*(.+)$', line.strip())
+            error_msg = error_match.group(1).strip() if error_match else "Unknown error"
+            
+            failures.append({
+                "test": test_name,
+                "file": file_path,
+                "error": error_msg[:200]  # Truncate long errors
+            })
+    
+    return failures
 
 
 def write_handoff(req_id, phase, result, pass_ratio, regression_failures):
@@ -147,11 +201,12 @@ def run_feature_scope(req_id):
             "description": f"No tests found for {req_id} (skipped)"
         }
 
-    exit_code, pass_ratio = run_tests([str(p) for p in test_paths], f"Feature scope: {req_id}")
+    # GAP-7 FIX: run_tests now returns (exit_code, pass_ratio, failures)
+    exit_code, pass_ratio, failures = run_tests([str(p) for p in test_paths], f"Feature scope: {req_id}")
     return {
         "exit_code": exit_code,
         "pass_ratio": pass_ratio,
-        "failures": [],
+        "failures": failures,  # GAP-7 FIX: Actually capture failures
         "description": f"Feature scope: {req_id}"
     }
 
@@ -162,11 +217,12 @@ def run_full_regression():
     integration_tests = list(TESTS_INTEGRATION_PATH.glob("**/*.integration.spec.ts"))
     all_tests = [str(p) for p in unit_tests + integration_tests]
 
-    exit_code, pass_ratio = run_tests(all_tests, "Full regression suite")
+    # GAP-7 FIX: run_tests now returns (exit_code, pass_ratio, failures)
+    exit_code, pass_ratio, failures = run_tests(all_tests, "Full regression suite")
     return {
         "exit_code": exit_code,
         "pass_ratio": pass_ratio,
-        "failures": [],
+        "failures": failures,  # GAP-7 FIX: Actually capture failures for regression_failures in state.json
         "description": "Full regression suite"
     }
 

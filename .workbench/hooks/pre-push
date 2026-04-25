@@ -90,17 +90,26 @@ while IFS= read -r oldrev newrev refname; do
                 if [ "$branch" = "develop" ]; then
                     # Check if trivial chore commit with human approval
                     commit_message=$(git log -1 --format="%s" "$newrev" 2>/dev/null || echo "")
-                    if echo "$commit_message" | grep -i "APPROVED-BY-HUMAN" > /dev/null; then
-                        echo "[PRE-PUSH] ${YELLOW}WARNING: Approved trivial chore to develop${NC}"
-                        echo "  Branch: $branch"
-                        echo "  Commit: $commit_message"
-                        echo "  Push allowed with human approval."
+                    # GAP-6 FIX: APPROVED-BY-HUMAN must be in footer as proper token
+                    # Valid: "chore: fix typo\nAPPROVED-BY-HUMAN" (footer token on own line)
+                    # Invalid: "feat: add feature\nThis needs APPROVED-BY-HUMAN later"
+                    # Check that APPROVED-BY-HUMAN appears in the last 2 lines (footer context)
+                    if echo "$commit_message" | tail -2 | grep -qE "APPROVED-BY-HUMAN"; then
+                        # Verify it's a trivial chore (type=chore)
+                        if echo "$commit_message" | grep -qE "^chore(\([^\)]+\))?:.*"; then
+                            echo "[PRE-PUSH] ${YELLOW}WARNING: Approved trivial chore to develop${NC}"
+                            echo "  Branch: $branch"
+                            echo "  Commit: $commit_message"
+                            echo "  Push allowed with human approval."
+                        else
+                            echo "[PRE-PUSH] ${RED}BLOCKED: APPROVED-BY-HUMAN requires chore type${NC}"
+                            echo "  Commit type must be 'chore', not feat/fix/docs/etc."
+                            exit 1
+                        fi
                     else
-                        echo "[PRE-PUSH] ${RED}BLOCKED: Direct push to $branch is not allowed${NC}"
-                        echo "  Branch: $branch"
-                        echo "  Only merge commits via PR are allowed for $branch."
-                        echo "  For trivial chores to develop, add 'APPROVED-BY-HUMAN' to commit message."
-                        echo "  Push to a feature branch and create a Pull Request instead."
+                        echo "[PRE-PUSH] ${RED}BLOCKED: APPROVED-BY-HUMAN must be in commit footer as proper token${NC}"
+                        echo "  Format: chore: <description>\nAPPROVED-BY-HUMAN"
+                        echo "  APPROVED-BY-HUMAN must appear on its own line at the end."
                         exit 1
                     fi
                 else

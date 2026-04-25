@@ -318,7 +318,11 @@ def check_crash_checkpoint() -> CheckResult:
 
 
 def check_dependency_blocked_mode() -> CheckResult:
-    """DEP-3: Check for non-Orchestrator commits during DEPENDENCY_BLOCKED state."""
+    """DEP-3: Check for non-Orchestrator commits during DEPENDENCY_BLOCKED state.
+    
+    GAP-9 FIX: Now also checks git author email patterns to detect agent commits.
+    Previously only used commit message keyword heuristics which could miss agent work.
+    """
     state = load_state()
     if not state:
         return CheckResult(rule="DEP-3", status="INFO", message="No state.json found")
@@ -334,21 +338,51 @@ def check_dependency_blocked_mode() -> CheckResult:
         # Try to find when block started from registry
         pass
     
-    # Check recent commits for non-Orchestrator work
-    stdout, rc = run_git(["log", "--oneline", "-5", "--format=%s"])
-    if rc == 0 and stdout:
-        commits = stdout.split("\n")
-        suspicious = [c for c in commits if c.strip() and not any(
-            keyword in c.lower() for keyword in ["chore", "docs", "monitor", "dependency"]
+    # GAP-9 FIX: Check author email patterns in recent commits
+    # Agent commits are typically identifiable by email patterns like agent@, bot@, ai@, roo@, cline@
+    stdout_author, rc_author = run_git(["log", "-5", "--format=%ae"])
+    stdout_msg, rc_msg = run_git(["log", "-5", "--format=%s"])
+    
+    suspicious = []
+    agent_commits = []
+    
+    if rc_author == 0 and stdout_author:
+        authors = stdout_author.split("\n")
+        messages = stdout_msg.split("\n") if rc_msg == 0 and stdout_msg else []
+        
+        # Common agent email patterns
+        agent_patterns = ["agent@", "bot@", "ai@", "roo@", "cline@", "workbench@"]
+        
+        for i, author in enumerate(authors):
+            if any(pattern in author.lower() for pattern in agent_patterns):
+                # Found an agent commit - check if it's a legitimate orchestrator commit
+                msg = messages[i] if i < len(messages) else ""
+                is_orchestrator = any(keyword in msg.lower() for keyword in ["chore", "docs", "monitor", "dependency", "handoff"])
+                
+                if not is_orchestrator:
+                    agent_commits.append(f"{author}: {msg}")
+                    suspicious.append(msg)
+    
+    # Check commit messages for non-Orchestrator work (original heuristic)
+    if rc_msg == 0 and stdout_msg:
+        commits = stdout_msg.split("\n")
+        msg_suspicious = [c for c in commits if c.strip() and not any(
+            keyword in c.lower() for keyword in ["chore", "docs", "monitor", "dependency", "handoff"]
         )]
-        if suspicious:
-            return CheckResult(
-                rule="DEP-3",
-                status="CRITICAL",
-                message=f"Non-Orchestrator commits detected during DEPENDENCY_BLOCKED state",
-                suggestion="Only the Orchestrator Agent may act during DEPENDENCY_BLOCKED. Revert non-Orchestrator commits.",
-                details=suspicious[:3]
-            )
+        # Merge with agent-based detection
+        for s in msg_suspicious:
+            if s not in suspicious:
+                suspicious.append(s)
+    
+    if suspicious or agent_commits:
+        details = agent_commits[:3] if agent_commits else suspicious[:3]
+        return CheckResult(
+            rule="DEP-3",
+            status="CRITICAL",
+            message=f"Non-Orchestrator commits detected during DEPENDENCY_BLOCKED state",
+            suggestion="Only the Orchestrator Agent may act during DEPENDENCY_BLOCKED. Revert non-Orchestrator commits.",
+            details=details
+        )
     
     return CheckResult(rule="DEP-3", status="WARNING", message="DEPENDENCY_BLOCKED — only Orchestrator Agent should be active",
                       suggestion="Monitor dependency states and report to human via Roo Chat")
@@ -381,13 +415,15 @@ def check_file_access_constraints() -> CheckResult:
     
     allowed_prefixes = stage_allowed.get(stage, [])
     if not allowed_prefixes:
-        # Stage 4 is read-only — any staged file is a violation
+        # GAP-10 FIX: Stage 4 (Orchestrator/Reviewer/Security) is read-only per FAC-1 table
+        # Previously there was a memory-bank/ exception that allowed writes for session management,
+        # but per FAC-1, Stage 4 is strictly read-only. Any staged file is a violation.
         if staged_files:
             return CheckResult(
                 rule="FAC-1",
                 status="CRITICAL",
                 message=f"Stage {stage} is read-only but {len(staged_files)} files are staged for write",
-                suggestion=f"Unstage all files: git reset HEAD",
+                suggestion=f"Unstage all files: git reset HEAD. Stage 4 may not write to any files.",
                 details=staged_files[:5]
             )
         return CheckResult(rule="FAC-1", status="OK", message=f"Stage {stage}: no staged files (ok)")
@@ -395,7 +431,8 @@ def check_file_access_constraints() -> CheckResult:
     violations = []
     for f in staged_files:
         if not any(f.startswith(prefix) for prefix in allowed_prefixes):
-            # Allow memory-bank and docs writes for all stages (session management)
+            # Allow memory-bank and docs writes for stages 1-3 (session management exception)
+            # GAP-10 FIX: This exception does NOT apply to Stage 4 (handled above)
             if not any(f.startswith(p) for p in ["memory-bank/", "docs/conversations/", "state.json"]):
                 violations.append(f)
     
@@ -500,6 +537,63 @@ def check_arbiter_capabilities_registered() -> CheckResult:
     return CheckResult(rule="CMD-TRANSITION", status="OK", message="All arbiter_capabilities registered")
 
 
+def check_hooks_installed() -> CheckResult:
+    """HOOK-INSTALL: Check if Arbiter hooks are properly installed in .git/hooks/.
+    
+    GAP-4 FIX: Hooks in .workbench/hooks/ are NOT automatically executed by git.
+    Git only executes hooks that are installed in .git/hooks/ directory.
+    """
+    import stat
+    
+    repo_root = REPO_ROOT
+    git_path = repo_root / ".git"
+    
+    # Resolve the actual .git directory (handles submodules)
+    if git_path.is_file():
+        # Submodule: .git is a file with content like "gitdir: ../.git/modules/name"
+        content = git_path.read_text(encoding="utf-8").strip()
+        if content.startswith("gitdir:"):
+            git_dir = content[len("gitdir:"):].strip()
+            actual_git_dir = (repo_root / git_dir).resolve()
+        else:
+            return CheckResult(
+                rule="HOOK-INSTALL",
+                status="WARNING",
+                message=".git file has unexpected format",
+                suggestion="Verify git repository structure"
+            )
+    elif git_path.is_dir():
+        actual_git_dir = git_path
+    else:
+        return CheckResult(
+            rule="HOOK-INSTALL",
+            status="WARNING",
+            message="No .git directory found",
+            suggestion="Initialize git repository: git init"
+        )
+    
+    hooks_installed = actual_git_dir / "hooks"
+    hooks_source = repo_root / ".workbench" / "hooks"
+    
+    required_hooks = ["pre-commit", "pre-push", "post-merge", "post-tag"]
+    missing_hooks = []
+    for hook_name in required_hooks:
+        hook_path = hooks_installed / hook_name
+        if not hook_path.exists():
+            missing_hooks.append(hook_name)
+    
+    if missing_hooks:
+        return CheckResult(
+            rule="HOOK-INSTALL",
+            status="CRITICAL",
+            message=f"Required hooks not installed in .git/hooks/: {missing_hooks}",
+            suggestion="Install hooks: cp .workbench/hooks/* .git/hooks/ && chmod +x .git/hooks/*",
+            details=missing_hooks
+        )
+    
+    return CheckResult(rule="HOOK-INSTALL", status="OK", message="All required hooks are installed")
+
+
 def check_forbidden_self_declaration() -> CheckResult:
     """FOR-1: Check for self-declaration in handoff-state.md when state != GREEN."""
     state = load_state()
@@ -545,12 +639,13 @@ CHECK_REGISTRY = {
     "REG-1":          check_regression_failures_populated,
     "CMD-TRANSITION": check_arbiter_capabilities_registered,
     "FOR-1":          check_forbidden_self_declaration,
+    "HOOK-INSTALL":   check_hooks_installed,
 }
 
 # Checks run in check-session mode (lightweight — 5 critical rules for session startup)
 # NOTE: SESSION_CHECKS includes CR-1 which is WARNING level (stale checkpoint detection)
-#       SLC-2, MEM-1, MEM-3a, DEP-3, FAC-1 are CRITICAL level
-SESSION_CHECKS = ["SLC-2", "MEM-1", "MEM-3a", "DEP-3", "FAC-1", "CR-1"]
+#       SLC-2, MEM-1, MEM-3a, DEP-3, FAC-1, HOOK-INSTALL are CRITICAL level
+SESSION_CHECKS = ["SLC-2", "MEM-1", "MEM-3a", "DEP-3", "FAC-1", "CR-1", "HOOK-INSTALL"]
 
 
 def format_result(result: CheckResult) -> str:
