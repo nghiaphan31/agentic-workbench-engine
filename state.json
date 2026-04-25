@@ -23,6 +23,7 @@
     "integration_test_runner": false,
     "git_hooks": false,
     "gatekeeper": false,
-    "gate_notification": false
+    "gate_notification": false,
+    "orchestrator_monitor": false
   }
 }
