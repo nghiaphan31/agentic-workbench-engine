@@ -1,0 +1,60 @@
+#!/bin/sh
+# post-commit hook — The Arbiter's Gate Notification Runner
+#
+# Owner: The Arbiter (Layer 2b)
+# Version: 2.1
+# Location: .workbench/hooks/post-commit
+#
+# This hook runs AFTER a successful git commit (including merges).
+# It triggers gate_notification.py to surface pending HITL gates to the human.
+#
+# Exit codes:
+#   0 = always allowed (non-blocking hook)
+#
+# NOTE: This is an INFORMATIONAL hook — it never blocks commits.
+#       Gate states are checked at session start via arbiter_check.py check-session.
+
+set -e
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+echo "[POST-COMMIT] Commit complete — checking for pending gates..."
+
+# =============================================================================
+# 1. RUN GATE NOTIFICATION
+# =============================================================================
+if [ -f ".workbench/scripts/gate_notification.py" ]; then
+    result=$(python .workbench/scripts/gate_notification.py --verbose 2>&1 || true)
+    exit_code=$?
+    
+    if echo "$result" | grep -qi "HITL.*gate\|pending.*human\|workflow.*blocked"; then
+        echo "[POST-COMMIT] ${YELLOW}⚠️ PENDING HUMAN ACTIONS DETECTED:${NC}"
+        echo "$result"
+        echo ""
+        echo "[POST-COMMIT] Run: python .workbench/scripts/orchestrator_monitor.py status --verbose"
+    elif echo "$result" | grep -qi "no pending\|not blocked\|workflow clear"; then
+        echo "[POST-COMMIT] ${GREEN}No pending gates — workflow clear${NC}"
+    else
+        echo "[POST-COMMIT] Gate check complete"
+    fi
+else
+    echo "[POST-COMMIT] gate_notification.py not found — skipping gate check"
+fi
+
+# =============================================================================
+# 2. LOG COMMIT TO AUDIT TRAIL
+# =============================================================================
+if [ -f ".workbench/scripts/audit_logger.py" ]; then
+    commit_hash=$(git rev-parse --verify HEAD 2>/dev/null || echo "unknown")
+    echo "[POST-COMMIT] Logging commit to audit trail..."
+    python .workbench/scripts/audit_logger.py save --session-id "post-commit-$(date +%s)" --branch "$(git branch --show-current)" 2>/dev/null || true
+fi
+
+echo "[POST-COMMIT] Post-commit checks complete"
+exit 0

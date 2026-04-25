@@ -658,6 +658,56 @@ def check_pipeline_enrollment() -> CheckResult:
         )
 
 
+def check_gate_notifications() -> CheckResult:
+    """
+    GATE_NOTIFY: Report pending HITL gates to human.
+
+    This check uses gate_notification.py to detect gate-blocking states
+    and surface pending human actions. INFO level — not blocking.
+    """
+    try:
+        # Dynamically import gate_notification to avoid circular dependencies
+        gate_notification_path = Path(__file__).parent / "gate_notification.py"
+        spec = importlib.util.spec_from_file_location("gate_notification", gate_notification_path)
+        gate_notification = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate_notification)
+
+        state = load_state()
+        report = gate_notification.check_gates(state)
+
+        if not report.has_pending_gates():
+            return CheckResult(
+                rule="GATE_NOTIFY",
+                status="OK",
+                message="No pending human actions — workflow not blocked at any HITL gate",
+            )
+
+        # Summarize pending gates
+        summary = report.get_summary()
+        human_blocking = summary["human_blocking_gates"]
+        total = summary["total_pending"]
+
+        if human_blocking > 0:
+            return CheckResult(
+                rule="GATE_NOTIFY",
+                status="INFO",
+                message=f"⚠️ {human_blocking} HITL gate(s) require human action — workflow blocked",
+                suggestion=f"Run: python .workbench/scripts/orchestrator_monitor.py status --verbose",
+            )
+        else:
+            return CheckResult(
+                rule="GATE_NOTIFY",
+                status="INFO",
+                message=f"{total} pending gate(s) (Orchestrator monitoring, not human-blocking)",
+            )
+    except Exception as e:
+        return CheckResult(
+            rule="GATE_NOTIFY",
+            status="INFO",
+            message=f"Gate notification check unavailable: {e}",
+        )
+
+
 # Check registry mapping rule IDs to check functions
 CHECK_REGISTRY = {
     "SLC-1":          check_startup_protocol,
@@ -676,13 +726,14 @@ CHECK_REGISTRY = {
     "FOR-1":          check_forbidden_self_declaration,
     "HOOK-INSTALL":   check_hooks_installed,
     "GATEKEEPER":     check_pipeline_enrollment,
+    "GATE_NOTIFY":    check_gate_notifications,
 }
 
 # Checks run in check-session mode (lightweight — 5 critical rules for session startup)
 # NOTE: SESSION_CHECKS includes CR-1 which is WARNING level (stale checkpoint detection)
-#       SLC-2, MEM-1, MEM-3a, DEP-3, FAC-1, HOOK-INSTALL are CRITICAL level
-#       GATEKEEPER is also CRITICAL — no work should happen on unenrolled features
-SESSION_CHECKS = ["SLC-2", "MEM-1", "MEM-3a", "DEP-3", "FAC-1", "CR-1", "HOOK-INSTALL", "GATEKEEPER"]
+#       SLC-2, MEM-1, MEM-3a, DEP-3, FAC-1, HOOK-INSTALL, GATEKEEPER are CRITICAL level
+#       GATE_NOTIFY is INFO level — informational only, not blocking
+SESSION_CHECKS = ["SLC-2", "MEM-1", "MEM-3a", "DEP-3", "FAC-1", "CR-1", "HOOK-INSTALL", "GATEKEEPER", "GATE_NOTIFY"]
 
 
 def format_result(result: CheckResult) -> str:
@@ -801,7 +852,12 @@ def main():
         warnings = [r for r in results if r.status == "WARNING"]
         
         for result in results:
+            # Always show CRITICAL, WARNING, and GATE_NOTIFY INFO results
             if result.status in ["CRITICAL", "WARNING"]:
+                print(format_result(result))
+                print()
+            elif result.status == "INFO" and result.rule == "GATE_NOTIFY":
+                # GATE_NOTIFY INFO level is informational — show to human
                 print(format_result(result))
                 print()
         
