@@ -235,7 +235,7 @@ The agent MUST read files from `memory-bank/hot-context/` at session start. The 
 - `progress.md` — project-wide checkbox state
 - `decisionLog.md` — ADRs with date, context, decisions
 - `systemPatterns.md` — technical conventions
-- `productContext.md` — sprint stories
+- `productContext.md` — development cycle stories
 - `RELEASE.md` — single source of truth for release tracking
 - `handoff-state.md` — inter-agent handoff data
 - `session-checkpoint.md` — 5-minute crash recovery heartbeat
@@ -266,6 +266,16 @@ Significant decisions MUST be permanently logged in `decisionLog.md` using the A
 ```
 
 > **Rule MEM-2:** Significant decisions MUST be logged in `decisionLog.md` using ADR format. Decision log entries are **persisted** (never rotated) — they accumulate across sprints as permanent architectural records.
+
+### 8.4 Codebase-Memory MCP Tool
+
+The `codebase-memory` MCP server provides codebase indexing and search capabilities. Agents MUST use this MCP tool for codebase understanding tasks rather than attempting to manually index or parse code.
+
+> **Rule MEM-3:** When understanding codebase structure, searching for symbols, or exploring code relationships, the agent MUST use the `codebase-memory` MCP tool:
+>   - `search_codebase(query)` — search for code patterns, symbols, or text across the codebase
+>   - `get_symbol(symbol_name)` — get detailed information about a symbol (function, class, etc.)
+>   - `get_file_structure()` — get directory tree and file organization
+> Direct file parsing for understanding codebase structure is discouraged — use the MCP tool for better context.
 
 ---
 

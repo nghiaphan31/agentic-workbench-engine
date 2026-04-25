@@ -1,0 +1,18 @@
+# Node.js dependencies
+node_modules/
+
+# npm package lock (commit package-lock.json separately)
+# package-lock.json
+
+# Build output
+dist/
+build/
+
+# Cache files
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS files
+.DS_Store
+Thumbs.db

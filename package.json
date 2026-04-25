@@ -1,0 +1,19 @@
+{
+  "name": "agentic-workbench-engine",
+  "version": "2.1",
+  "description": "Agentic Workbench Engine Template - Core workbench files, arbiter scripts, and MCP servers",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "agentic-workbench",
+    "mcp",
+    "codebase-memory"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@codebase-memory/mcp-server": "^1.0.0"
+  }
+}

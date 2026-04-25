@@ -5,6 +5,11 @@
       "command": "python",
       "args": [".workbench/mcp/archive_query_server.py"],
       "description": "Cold Zone archive query — search and read archived memory-bank files"
+    },
+    "codebase-memory": {
+      "command": "node",
+      "args": ["./node_modules/@codebase-memory/mcp-server/dist/index.js"],
+      "description": "Codebase indexing and search — enables AI to understand codebase structure"
     }
   },
   "settings": {
