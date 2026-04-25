@@ -269,13 +269,27 @@ Significant decisions MUST be permanently logged in `decisionLog.md` using the A
 
 ### 8.4 Codebase-Memory MCP Tool
 
-The `codebase-memory` MCP server provides codebase indexing and search capabilities. Agents MUST use this MCP tool for codebase understanding tasks rather than attempting to manually index or parse code.
+The `codebase-memory` MCP server provides **code structure** indexing and search capabilities via a SQLite knowledge graph. It is a **code navigation tool** — entirely separate from the `memory-bank/` project state system.
 
-> **Rule MEM-3:** When understanding codebase structure, searching for symbols, or exploring code relationships, the agent MUST use the `codebase-memory` MCP tool:
->   - `search_codebase(query)` — search for code patterns, symbols, or text across the codebase
->   - `get_symbol(symbol_name)` — get detailed information about a symbol (function, class, etc.)
->   - `get_file_structure()` — get directory tree and file organization
-> Direct file parsing for understanding codebase structure is discouraged — use the MCP tool for better context.
+> **Rule MEM-3:** When understanding codebase structure, searching for symbols, or exploring code relationships, the agent SHOULD use the `codebase-memory` MCP tool rather than manually parsing source files with `read_file`. Available tools:
+>   - `index_repository` — index a repository into the knowledge graph
+>   - `search_graph` — BM25 full-text search for functions, classes, routes, variables
+>   - `query_graph` — execute Cypher queries for complex multi-hop patterns
+>   - `trace_path` — trace callers/callees and data flow through the graph
+>   - `get_code_snippet` — read source code for a specific function/class/symbol
+>   - `get_architecture` — get high-level architecture overview
+>   - `list_projects` — list all indexed projects
+>   - `search_code` — graph-augmented grep with structural ranking
+>   - `detect_changes` — detect code changes and their impact
+>   - `manage_adr` — create or update Architecture Decision Records
+>   - `ingest_traces` — ingest runtime traces to enhance the knowledge graph
+>   - `get_graph_schema` — get node labels and edge types
+>   - `delete_project` — delete a project from the index
+>   - `index_status` — get indexing status of a project
+>
+> **Rule MEM-3a (Cold Zone Firewall):** The `codebase-memory` MCP tool MUST NOT be used as a substitute for the `archive-query` MCP tool when accessing Cold Zone content. Even if `memory-bank/` files have been indexed into `codebase-memory`, agents MUST use `archive-query` (`search_archive`, `read_archive_file`) for all Cold Zone access. Using `codebase-memory` to retrieve archived project state is a violation of Rule MEM-1.
+>
+> **Startup note:** `codebase-memory` does NOT need to be initialized or queried during the startup protocol (SLC-1). It is an on-demand tool — call it when you need code structure information, not as part of session initialization.
 
 ---
 

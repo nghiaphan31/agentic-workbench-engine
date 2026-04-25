@@ -4,12 +4,12 @@
     "archive-query": {
       "command": "python",
       "args": [".workbench/mcp/archive_query_server.py"],
-      "description": "Cold Zone archive query — search and read archived memory-bank files"
+      "description": "[MEMORY SYSTEM] Cold Zone archive query — search and read archived memory-bank/ project state files. Use for past sprint context. Governed by Rule MEM-1."
     },
     "codebase-memory": {
       "command": ".workbench/bin/codebase-memory-mcp",
       "args": [],
-      "description": "Codebase indexing and search via SQLite graph — DeusData codebase-memory-mcp v0.6.0"
+      "description": "[CODE STRUCTURE] Codebase indexing and search via SQLite knowledge graph — DeusData codebase-memory-mcp v0.6.0. Use for code navigation, symbol search, call graphs. NOT a substitute for archive-query. Governed by Rule MEM-3."
     }
   },
   "settings": {

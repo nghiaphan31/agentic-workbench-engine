@@ -222,6 +222,76 @@ def check_decision_log_updated() -> CheckResult:
     return CheckResult(rule="MEM-2", status="OK", message=f"decisionLog.md updated {age_days:.1f} days ago")
 
 
+def check_codebase_memory_index_scope() -> CheckResult:
+    """MEM-3a: Check that memory-bank/ directories have NOT been indexed into codebase-memory MCP."""
+    # Try to call codebase-memory index_status
+    try:
+        result = subprocess.run(
+            ["codebase-memory", "index_status"],
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+        if result.returncode != 0:
+            # Binary not available or command failed — report WARNING
+            return CheckResult(
+                rule="MEM-3a",
+                status="WARNING",
+                message="codebase-memory index_status unavailable or failed",
+                suggestion="Ensure codebase-memory MCP is properly installed and reachable"
+            )
+        
+        output = result.stdout.strip()
+        if not output:
+            # No indexed projects — trivially ok
+            return CheckResult(rule="MEM-3a", status="OK", message="No indexed projects found in codebase-memory")
+        
+        # Parse output — each line is a project entry with path
+        # Expected format: "project_name | /path/to/project" or similar
+        # We check each line for memory-bank/ or archive-cold/ paths
+        violations = []
+        for line in output.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # Check if the line contains a memory-bank path
+            if "memory-bank/" in line:
+                violations.append(line)
+        
+        if violations:
+            return CheckResult(
+                rule="MEM-3a",
+                status="CRITICAL",
+                message=f"memory-bank/ indexed into codebase-memory MCP — Cold Zone Firewall violation",
+                suggestion="Use archive-query MCP tool to access Cold Zone. Remove memory-bank/ from codebase-memory index.",
+                details=violations[:5]
+            )
+        
+        return CheckResult(rule="MEM-3a", status="OK", message="No memory-bank/ paths indexed in codebase-memory")
+        
+    except FileNotFoundError:
+        return CheckResult(
+            rule="MEM-3a",
+            status="WARNING",
+            message="codebase-memory binary not found",
+            suggestion="Install codebase-memory MCP or ensure it is in PATH"
+        )
+    except subprocess.TimeoutExpired:
+        return CheckResult(
+            rule="MEM-3a",
+            status="WARNING",
+            message="codebase-memory index_status timed out",
+            suggestion="codebase-memory may be busy — retry later"
+        )
+    except Exception as e:
+        return CheckResult(
+            rule="MEM-3a",
+            status="WARNING",
+            message=f"Failed to check codebase-memory index status: {e}",
+            suggestion="Investigate codebase-memory MCP availability"
+        )
+
+
 def check_crash_checkpoint() -> CheckResult:
     """CR-1: Check for stale ACTIVE crash checkpoint."""
     checkpoint = HOT_CONTEXT / "session-checkpoint.md"
@@ -467,6 +537,7 @@ CHECK_REGISTRY = {
     "HND-2":          check_handoff_freshness,
     "MEM-1":          check_cold_zone_access,
     "MEM-2":          check_decision_log_updated,
+    "MEM-3a":         check_codebase_memory_index_scope,
     "CR-1":           check_crash_checkpoint,
     "DEP-3":          check_dependency_blocked_mode,
     "FAC-1":          check_file_access_constraints,
@@ -478,8 +549,8 @@ CHECK_REGISTRY = {
 
 # Checks run in check-session mode (lightweight — 5 critical rules for session startup)
 # NOTE: SESSION_CHECKS includes CR-1 which is WARNING level (stale checkpoint detection)
-#       SLC-2, MEM-1, DEP-3, FAC-1 are CRITICAL level
-SESSION_CHECKS = ["SLC-2", "MEM-1", "DEP-3", "FAC-1", "CR-1"]
+#       SLC-2, MEM-1, MEM-3a, DEP-3, FAC-1 are CRITICAL level
+SESSION_CHECKS = ["SLC-2", "MEM-1", "MEM-3a", "DEP-3", "FAC-1", "CR-1"]
 
 
 def format_result(result: CheckResult) -> str:
@@ -499,6 +570,22 @@ def format_result(result: CheckResult) -> str:
         for d in result.details[:3]:
             lines.append(f"    - {d}")
     return "\n".join(lines)
+
+
+def get_memory_systems_banner() -> str:
+    """
+    MEM-3/MEM-3a boundary awareness banner.
+    
+    Displays at the start of check-session output to remind agents of the
+    boundary between codebase-memory (code structure/search) and memory-bank/
+    (project state). This is a human-factor mitigation — even with rules
+    in place, agents under time pressure may not recall Section 8.4.
+    """
+    return """[INFO]  MEMORY SYSTEMS REMINDER (MEM-3 / MEM-3a)
+[INFO]  ─────────────────────────────────────────────────
+[INFO]  • `codebase-memory` = code structure/search only
+[INFO]  • `memory-bank/` = project state (use `archive-query` MCP for Cold Zone)
+[INFO]  ─────────────────────────────────────────────────"""
 
 
 def run_checks(rules: list = None, session_mode: bool = False) -> list:
@@ -573,6 +660,8 @@ def main():
     elif args.command == "check-session":
         results = run_checks(session_mode=True)
         
+        print(get_memory_systems_banner())
+        print()
         print("[ARBITER CHECK] Running session-start compliance scan...")
         print()
         
