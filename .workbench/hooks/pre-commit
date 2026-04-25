@@ -44,6 +44,42 @@ if [ -f ".workbench/scripts/arbiter_check.py" ]; then
 fi
 
 # =============================================================================
+# 0b. BRANCH NAME VALIDATION (CMT-1)
+# =============================================================================
+CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "")
+
+if [ -n "$CURRENT_BRANCH" ]; then
+    BLOCKED_BRANCHES="main master develop"
+    if echo "$BLOCKED_BRANCHES" | grep -w "$CURRENT_BRANCH" > /dev/null; then
+        echo "[PRE-COMMIT] ${RED}BLOCKED: Cannot commit directly to protected branch '$CURRENT_BRANCH'${NC}"
+        echo "  Feature commits must be made on a feature/ or lab/ branch."
+        echo "  Create a branch: git checkout -b feature/REQ-XXX-description"
+        exit 1
+    fi
+    echo "[PRE-COMMIT] Branch: $CURRENT_BRANCH (ok)"
+fi
+
+# =============================================================================
+# 0c. MERGED-BRANCH CHECK (CMT-2)
+# =============================================================================
+if [ -n "$CURRENT_BRANCH" ] && echo "$CURRENT_BRANCH" | grep -qE "^(feature|lab)/"; then
+    # Check if this branch has been merged into main or develop
+    if git branch --merged main --quiet 2>/dev/null | grep -w "$CURRENT_BRANCH" > /dev/null; then
+        echo "[PRE-COMMIT] ${RED}BLOCKED: Branch '$CURRENT_BRANCH' has already been merged to main${NC}"
+        echo "  Committing on an already-merged branch is forbidden by CMT-2."
+        echo "  Switch to main: git checkout main"
+        echo "  Create a new branch for new work: git checkout -b feature/REQ-XXX"
+        exit 1
+    fi
+    if git branch --merged develop --quiet 2>/dev/null | grep -w "$CURRENT_BRANCH" > /dev/null; then
+        echo "[PRE-COMMIT] ${RED}BLOCKED: Branch '$CURRENT_BRANCH' has already been merged to develop${NC}"
+        echo "  Committing on an already-merged branch is forbidden by CMT-2."
+        exit 1
+    fi
+    echo "[PRE-COMMIT] Branch '$CURRENT_BRANCH' is not merged (ok)"
+fi
+
+# =============================================================================
 # 1. SKIP VALIDATION FLAG
 # =============================================================================
 # Allow bypassing pre-commit checks via git commit --no-verify or environment variable
@@ -144,10 +180,23 @@ if [ -f "biome.json" ]; then
 fi
 
 # =============================================================================
-# 4. REQUIREMENTS_LOCKED → FEATURE_GREEN TRANSITION CHECK
+# 4. BLOCKING STATES CHECK (GAP-5: Expand blocking states)
 # =============================================================================
-# If state.json shows FEATURE_GREEN, block until Phase 2 (regression) passes
+# Block commits when in certain blocking states
 CURRENT_STATE=$(python -c "import json; s=json.load(open('state.json')); print(s.get('state',''))" 2>/dev/null || echo "UNKNOWN")
+
+# Direct blocking states (block regardless of context)
+DIRECT_BLOCKING_STATES="REGRESSION_RED INTEGRATION_RED PIVOT_IN_PROGRESS"
+for blocking_state in $DIRECT_BLOCKING_STATES; do
+    if [ "$CURRENT_STATE" = "$blocking_state" ]; then
+        echo "[PRE-COMMIT] ${RED}BLOCKED: Cannot commit while state is $blocking_state${NC}"
+        echo "  Current state: $CURRENT_STATE"
+        echo "  Complete the current pipeline stage before committing."
+        exit 1
+    fi
+done
+
+# Special case: FEATURE_GREEN + REGRESSION_RED (Phase 2 not complete)
 if [ "$CURRENT_STATE" = "FEATURE_GREEN" ]; then
     REGRESSION_STATE=$(python -c "import json; s=json.load(open('state.json')); print(s.get('regression_state',''))" 2>/dev/null || echo "UNKNOWN")
     if [ "$REGRESSION_STATE" = "REGRESSION_RED" ]; then

@@ -46,6 +46,20 @@ if [ -f "state.json" ]; then
 fi
 
 # =============================================================================
+# 1b. CHECK FOR DELETED SOURCE BRANCH IN MERGE COMMITS (CMT-2)
+# =============================================================================
+# git merge --delete-branch removes the source branch after merge — this is forbidden
+# Detect if this push contains a merge to main/develop and warn the user
+if [ "$branch" = "main" ] || [ "$branch" = "develop" ]; then
+    merge_base=$(git merge-base "$oldrev" "$newrev" 2>/dev/null || echo "")
+    if [ -n "$merge_base" ] && [ "$merge_base" != "$oldrev" ]; then
+        echo "[PRE-PUSH] ${YELLOW}WARNING: Merge detected to $branch${NC}"
+        echo "  Ensure --delete-branch was NOT used when creating this merge."
+        echo "  Use: git merge --no-delete-branch (CMT-2)"
+    fi
+fi
+
+# =============================================================================
 # 2. CHECK FOR DIRECT PUSH TO MAIN (non-merge commits only)
 # =============================================================================
 # Get the remote and branch being pushed
@@ -63,20 +77,40 @@ while IFS= read -r oldrev newrev refname; do
         continue
     fi
     
-    # Check if this is a direct push to main (not a merge)
-    if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+    # Check if this is a direct push to main/develop (not a merge)
+    BLOCKED_BRANCHES="main master develop"
+    if echo "$BLOCKED_BRANCHES" | grep -w "$branch" > /dev/null; then
         # Check if this is a fast-forward push or a force push
         # A merge commit would have two parents
         if [ "$oldrev" != "$z40" ]; then
             # Not a new branch - check if it's a merge
             parent_count=$(git rev-list --parents --count "$newrev" ^"$oldrev" 2>/dev/null | tr -d ' ')
             if [ "$parent_count" -lt 2 ]; then
-                # Not a merge commit - direct push blocked
-                echo "[PRE-PUSH] ${RED}BLOCKED: Direct push to $branch is not allowed${NC}"
-                echo "  Branch: $branch"
-                echo "  Only merge commits via PR are allowed for $branch."
-                echo "  Push to a feature branch and create a Pull Request instead."
-                exit 1
+                # Not a merge commit - check for APPROVED-BY-HUMAN exception
+                if [ "$branch" = "develop" ]; then
+                    # Check if trivial chore commit with human approval
+                    commit_message=$(git log -1 --format="%s" "$newrev" 2>/dev/null || echo "")
+                    if echo "$commit_message" | grep -i "APPROVED-BY-HUMAN" > /dev/null; then
+                        echo "[PRE-PUSH] ${YELLOW}WARNING: Approved trivial chore to develop${NC}"
+                        echo "  Branch: $branch"
+                        echo "  Commit: $commit_message"
+                        echo "  Push allowed with human approval."
+                    else
+                        echo "[PRE-PUSH] ${RED}BLOCKED: Direct push to $branch is not allowed${NC}"
+                        echo "  Branch: $branch"
+                        echo "  Only merge commits via PR are allowed for $branch."
+                        echo "  For trivial chores to develop, add 'APPROVED-BY-HUMAN' to commit message."
+                        echo "  Push to a feature branch and create a Pull Request instead."
+                        exit 1
+                    fi
+                else
+                    # main/master - no exception
+                    echo "[PRE-PUSH] ${RED}BLOCKED: Direct push to $branch is not allowed${NC}"
+                    echo "  Branch: $branch"
+                    echo "  Only merge commits via PR are allowed for $branch."
+                    echo "  Push to a feature branch and create a Pull Request instead."
+                    exit 1
+                fi
             fi
         fi
     fi
