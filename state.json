@@ -22,6 +22,7 @@
     "dependency_monitor": false,
     "integration_test_runner": false,
     "git_hooks": false,
-    "gatekeeper": false
+    "gatekeeper": false,
+    "gate_notification": false
   }
 }
