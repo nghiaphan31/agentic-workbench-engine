@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import importlib.util
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -623,6 +624,40 @@ def check_forbidden_self_declaration() -> CheckResult:
     return CheckResult(rule="FOR-1", status="OK", message="No self-declaration markers detected")
 
 
+def check_pipeline_enrollment() -> CheckResult:
+    """
+    GATEKEEPER: Validate that any active work is properly enrolled in the pipeline.
+
+    This check imports gatekeeper.py and uses its check_enrollment logic.
+    CRITICAL if: no active_req_id OR feature not in feature_registry
+    WARNING if: feature is in terminal state (MERGED, ABANDONED, DELETED)
+    OK if: feature properly enrolled and in active state
+    """
+    try:
+        # Dynamically import gatekeeper to avoid circular dependencies
+        gatekeeper_path = Path(__file__).parent / "gatekeeper.py"
+        spec = importlib.util.spec_from_file_location("gatekeeper", gatekeeper_path)
+        gatekeeper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gatekeeper)
+
+        state = load_state()
+        result = gatekeeper.check_enrollment(state)
+
+        return CheckResult(
+            rule="GATEKEEPER",
+            status=result.level,
+            message=result.message,
+            suggestion=result.suggestion if result.suggestion else "",
+        )
+    except Exception as e:
+        return CheckResult(
+            rule="GATEKEEPER",
+            status="WARNING",
+            message=f"Gatekeeper check failed with exception: {e}",
+            suggestion="Ensure gatekeeper.py exists and is valid",
+        )
+
+
 # Check registry mapping rule IDs to check functions
 CHECK_REGISTRY = {
     "SLC-1":          check_startup_protocol,
@@ -640,12 +675,14 @@ CHECK_REGISTRY = {
     "CMD-TRANSITION": check_arbiter_capabilities_registered,
     "FOR-1":          check_forbidden_self_declaration,
     "HOOK-INSTALL":   check_hooks_installed,
+    "GATEKEEPER":     check_pipeline_enrollment,
 }
 
 # Checks run in check-session mode (lightweight — 5 critical rules for session startup)
 # NOTE: SESSION_CHECKS includes CR-1 which is WARNING level (stale checkpoint detection)
 #       SLC-2, MEM-1, MEM-3a, DEP-3, FAC-1, HOOK-INSTALL are CRITICAL level
-SESSION_CHECKS = ["SLC-2", "MEM-1", "MEM-3a", "DEP-3", "FAC-1", "CR-1", "HOOK-INSTALL"]
+#       GATEKEEPER is also CRITICAL — no work should happen on unenrolled features
+SESSION_CHECKS = ["SLC-2", "MEM-1", "MEM-3a", "DEP-3", "FAC-1", "CR-1", "HOOK-INSTALL", "GATEKEEPER"]
 
 
 def format_result(result: CheckResult) -> str:

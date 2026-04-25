@@ -21,6 +21,7 @@
     "crash_recovery": false,
     "dependency_monitor": false,
     "integration_test_runner": false,
-    "git_hooks": false
+    "git_hooks": false,
+    "gatekeeper": false
   }
 }
