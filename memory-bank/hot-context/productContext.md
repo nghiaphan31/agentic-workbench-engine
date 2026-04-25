@@ -1,14 +1,14 @@
-# productContext.md — Sprint Stories
+# productContext.md — Development Cycle Stories
 
 **Template Version:** 2.1
 **Owner:** All Agents
-**Rotation Policy:** Rotate (archive, then reset to template) at sprint end
+**Rotation Policy:** Rotate (archive, then reset to template) at development cycle end
 
 ---
 
-## Current Sprint: S-NNN
+## Current Development Cycle: C-NNN
 
-**Sprint Goal:** (TODO: Define sprint goal)
+**Cycle Goal:** (TODO: Define cycle goal)
 **Duration:** (TODO: Start date - End date)
 
 ---
@@ -26,7 +26,7 @@
 
 ---
 
-## Sprint Backlog
+## Development Cycle Backlog
 
 - [ ] US-NNN: (TODO: Story title)
 - [ ] US-NNN: (TODO: Story title)
@@ -42,10 +42,10 @@
 
 ## Completed
 
-- (TODO: Completed user stories this sprint)
+- (TODO: Completed user stories this development cycle)
 
 ---
 
 ## Notes
 
-(TODO: Any additional sprint notes)
+(TODO: Any additional development cycle notes)

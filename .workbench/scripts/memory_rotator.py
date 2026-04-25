@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-memory_rotator.py — The Arbiter's Sprint Rotation Script
+memory_rotator.py — The Arbiter's Development Cycle Rotation Script
 
 Owner: The Arbiter (Layer 2)
-Version: 2.1
+Version: 2.2
 Location: .workbench/scripts/memory_rotator.py
 
-Applies per-file rotation policy at sprint end:
+Applies per-file rotation policy at development cycle end (when a feature reaches MERGED):
   Rotate (archive, then reset): activeContext.md, progress.md, productContext.md
   Persist (never rotate): decisionLog.md, systemPatterns.md, RELEASE.md, narrativeRequest.md
   Reset (overwrite, no archive): handoff-state.md, session-checkpoint.md
@@ -383,12 +383,12 @@ def reset_file(file_path, template_key):
 
 
 def rotate_sprint(dry_run=False):
-    """Apply rotation policy to all Hot Zone files."""
+    """Apply rotation policy to all Hot Zone files at development cycle end."""
     if not HOT_CONTEXT_PATH.exists():
         print(f"ERROR: Hot context directory not found: {HOT_CONTEXT_PATH}")
         sys.exit(1)
 
-    print(f"[MEMORY ROTATOR] Sprint Rotation — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"[MEMORY ROTATOR] Development Cycle Rotation — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     print(f"  Hot Zone: {HOT_CONTEXT_PATH}")
     print(f"  Archive: {ARCHIVE_COLD_PATH}")
     print()

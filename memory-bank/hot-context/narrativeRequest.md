@@ -2,7 +2,7 @@
 
 **Template Version:** 2.1
 **Owner:** Architect Agent
-**Rotation Policy:** Rotate (archive, then reset to template) at sprint end
+**Rotation Policy:** Persist (never rotated — accumulates across development cycles)
 
 ---
 

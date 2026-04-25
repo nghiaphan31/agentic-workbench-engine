@@ -2,7 +2,7 @@
 
 **Template Version:** 2.1
 **Owner:** All Agents
-**Rotation Policy:** Rotate (archive, then reset to template) at sprint end
+**Rotation Policy:** Rotate (archive, then reset to template) at development cycle end
 
 ---
 
@@ -18,7 +18,7 @@
 
 ---
 
-## Sprint Goals
+## Development Cycle Goals
 
 - [ ] (TODO: Sprint goal 1)
 - [ ] (TODO: Sprint goal 2)
