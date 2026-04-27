@@ -196,7 +196,10 @@ def cmd_init(project_name):
             "crash_recovery": False,
             "dependency_monitor": False,
             "integration_test_runner": False,
-            "git_hooks": False
+            "git_hooks": False,
+            "gatekeeper": False,
+            "gate_notification": False,
+            "orchestrator_monitor": False
         }
     }
     state_path = project_path / "state.json"
@@ -204,6 +207,9 @@ def cmd_init(project_name):
         json.dump(state, f, indent=2)
         f.write("\n")
     print(f"  Created: state.json (INIT)")
+
+    # Register arbiter capabilities based on installed scripts
+    cmd_register_arbiter()
 
     # Initial commit
     subprocess.run(["git", "add", "-A"], check=True)
@@ -293,6 +299,9 @@ def cmd_upgrade(version):
     # Install hooks
     _install_hooks(repo_path)
 
+    # Register arbiter capabilities based on upgraded scripts
+    cmd_register_arbiter()
+
     print(f"\n[WORKBENCH-CLI] Upgrade complete!")
 
 
@@ -350,6 +359,9 @@ def cmd_rotate():
 
     print(f"[WORKBENCH-CLI] Running memory rotator...")
     result = subprocess.run(["python3", str(rotator_script), "rotate"], cwd=repo_path)
+    if result.returncode == 0:
+        # Auto-register arbiter capabilities after successful execution
+        cmd_register_arbiter()
     sys.exit(result.returncode)
 
 
@@ -531,7 +543,40 @@ def cmd_check():
         print(f"ERROR: arbiter_check.py not found at {check_script}", file=sys.stderr)
         sys.exit(1)
     result = subprocess.run(["python3", str(check_script), "check"], cwd=repo_path)
+    if result.returncode == 0:
+        # Auto-register arbiter capabilities after successful compliance check
+        cmd_register_arbiter()
     sys.exit(result.returncode)
+
+
+def register_arbiter_capability(repo_path, capability_key):
+    """Register a single Arbiter capability in state.json.
+    
+    Called by arbiter scripts when they run successfully, enabling CMD-2
+    command delegation enforcement for that domain.
+    
+    Args:
+        repo_path: Path to the repo containing state.json
+        capability_key: Key in arbiter_capabilities (e.g., 'gatekeeper', 'test_orchestrator')
+    
+    Returns:
+        bool: True if registration succeeded, False if state.json not found
+    """
+    state = load_state_json(repo_path)
+    if not state:
+        return False
+    
+    if "arbiter_capabilities" not in state:
+        return False
+    
+    if capability_key in state["arbiter_capabilities"]:
+        state["arbiter_capabilities"][capability_key] = True
+        state["last_updated"] = datetime.now(timezone.utc).isoformat()
+        state["last_updated_by"] = f"workbench-cli::{capability_key}"
+        _write_state(repo_path, state)
+        return True
+    
+    return False
 
 
 def cmd_register_arbiter():
@@ -544,21 +589,29 @@ def cmd_register_arbiter():
     
     scripts_dir = repo_path / ".workbench" / "scripts"
     
-    # Capability key mapping
+    # Capability key mapping - MUST match arbiter_capabilities keys in state.json
+    # Format: capability_key -> (script_name or path, is_git_hook)
     capabilities = {
-        "test_orchestrator": "test_orchestrator.py",
-        "gherkin_validator": "gherkin_validator.py",
-        "memory_rotator": "memory_rotator.py",
-        "audit_logger": "audit_logger.py",
-        "crash_recovery": "crash_recovery.py",
-        "dependency_monitor": "dependency_monitor.py",
-        "integration_test_runner": "integration_test_runner.py",
-        "git_hooks": ".git/hooks/pre-commit",
+        "test_orchestrator": ("test_orchestrator.py", False),
+        "gherkin_validator": ("gherkin_validator.py", False),
+        "memory_rotator": ("memory_rotator.py", False),
+        "audit_logger": ("audit_logger.py", False),
+        "crash_recovery": ("crash_recovery.py", False),
+        "dependency_monitor": ("dependency_monitor.py", False),
+        "integration_test_runner": ("integration_test_runner.py", False),
+        "git_hooks": (".git/hooks/pre-commit", True),
+        "gatekeeper": ("gatekeeper.py", False),
+        "gate_notification": ("gate_notification.py", False),
+        "orchestrator_monitor": ("orchestrator_monitor.py", False),
     }
     
     registered = []
-    for cap_key, script_name in capabilities.items():
-        script_path = scripts_dir / script_name if not script_name.startswith(".git") else repo_path / script_name
+    for cap_key, (script_name, is_git_hook) in capabilities.items():
+        if is_git_hook:
+            script_path = repo_path / script_name
+        else:
+            script_path = scripts_dir / script_name
+        
         if script_path.exists():
             state["arbiter_capabilities"][cap_key] = True
             registered.append(cap_key)
@@ -572,6 +625,9 @@ def cmd_register_arbiter():
     print(f"[WORKBENCH-CLI] Registered {len(registered)} Arbiter capabilities:")
     for cap in registered:
         print(f"  ✓ {cap}")
+    
+    if registered:
+        print(f"\nCMD-2 enforcement active for: {', '.join(registered)}")
 
 
 def main():

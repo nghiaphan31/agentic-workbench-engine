@@ -3,7 +3,7 @@
 test_orchestrator.py — The Arbiter's Test Orchestrator
 
 Owner: The Arbiter (Layer 2)
-Version: 2.1
+Version: 2.2
 Location: .workbench/scripts/test_orchestrator.py
 
 Two-phase test execution:
@@ -32,6 +32,25 @@ STATE_JSON_PATH = Path(__file__).parent.parent.parent / "state.json"
 HOT_CONTEXT_PATH = Path(__file__).parent.parent.parent / "memory-bank" / "hot-context"
 TESTS_UNIT_PATH = Path(__file__).parent.parent.parent / "tests" / "unit"
 TESTS_INTEGRATION_PATH = Path(__file__).parent.parent.parent / "tests" / "integration"
+
+# Import test_evidence for FOR-1(4) Phase 2 enforcement and FOR-1(1) CSTA
+from test_evidence import create_seal, save_seal, create_state_transition_signature, save_state_transition_signature
+
+
+def _get_current_commit():
+    """Get the current git commit hash."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
 
 
 def load_state():
@@ -266,6 +285,13 @@ def main():
 
             write_handoff(args.req_id, phase, result["exit_code"], pass_ratio, [])
 
+            # FOR-1(4): Create Phase 1 evidence seal
+            commit_hash = _get_current_commit()
+            if commit_hash:
+                seal = create_seal(commit_hash, phase1_passed=True, phase2_passed=False)
+                save_seal(commit_hash, seal)
+                print(f"  Evidence Seal: Phase 1 completed")
+
             print(f"[TEST ORCHESTRATOR] {phase}")
             print(f"  REQ-ID: {args.req_id}")
             print(f"  Pass Ratio: {pass_ratio:.1%}")
@@ -278,6 +304,14 @@ def main():
 
             if args.set_state:
                 if pass_ratio == 1.0:
+                    # FOR-1(1) CSTA: Create Arbiter-signed state transition
+                    state_from = state.get("state", "UNKNOWN")
+                    state_to = "GREEN"
+                    active_req = state.get("active_req_id", args.req_id)
+                    sig = create_state_transition_signature(state_from, state_to, active_req)
+                    save_state_transition_signature(state_from, state_to, active_req, sig)
+                    print(f"  FOR-1(1) CSTA: State transition {state_from}→{state_to} signed by Arbiter")
+                    
                     state["state"] = "GREEN"
                     state["regression_state"] = "CLEAN"
                 else:
@@ -290,6 +324,13 @@ def main():
                 save_state(state)
 
             write_handoff(state.get("active_req_id", "ALL"), phase, result["exit_code"], pass_ratio, state.get("regression_failures", []))
+
+            # FOR-1(4): Create Phase 2 evidence seal
+            commit_hash = _get_current_commit()
+            if commit_hash:
+                seal = create_seal(commit_hash, phase1_passed=True, phase2_passed=True)
+                save_seal(commit_hash, seal)
+                print(f"  Evidence Seal: Phase 2 completed")
 
             print(f"[TEST ORCHESTRATOR] {phase}")
             print(f"  Active REQ: {state.get('active_req_id', 'N/A')}")

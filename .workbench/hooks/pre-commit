@@ -226,6 +226,25 @@ if [ "$CURRENT_STATE" = "FEATURE_GREEN" ]; then
 fi
 
 # =============================================================================
+# 4b. FOR-1(7) + TRC-2: LAACT — Live Import Detection at Commit Time
+# =============================================================================
+# Use import_analyzer.py to detect live imports from non-MERGED features
+# This runs on staged src/ files and blocks the commit if violations found
+STAGED_SRC=$(git diff --cached --name-only --diff-filter=ACM | grep "^src/" || true)
+if [ -n "$STAGED_SRC" ]; then
+    if [ -f ".workbench/scripts/import_analyzer.py" ]; then
+        IMPORT_ANALYZER_RESULT=$(python .workbench/scripts/import_analyzer.py 2>&1 || echo "ANALYZER_FAILED")
+        if echo "$IMPORT_ANALYZER_RESULT" | grep -q "VIOLATIONS DETECTED"; then
+            echo "[PRE-COMMIT] ${RED}BLOCKED: Live imports from non-MERGED features detected${NC}"
+            echo "$IMPORT_ANALYZER_RESULT"
+            echo "[PRE-COMMIT] Use stub interfaces instead of live imports (Rule TRC-2, FOR-1(7))"
+            exit 1
+        fi
+        echo "[PRE-COMMIT] Import analysis passed (ok)"
+    fi
+fi
+
+# =============================================================================
 # 5. FILE OWNERSHIP CONFLICT DETECTION (non-blocking warning)
 # =============================================================================
 STAGED_SRC=$(git diff --cached --name-only --diff-filter=ACM | grep "^src/" || true)

@@ -140,6 +140,150 @@ if [ -f "state.json" ]; then
 fi
 
 # =============================================================================
+# FOR-1(4): CHECK PHASE 2 EVIDENCE SEAL
+# =============================================================================
+# Feature branches merging to develop/main must have Phase 2 evidence seal
+# This enforces that full regression was run before merge
+
+# Check if pushing to develop or main
+if [ "$branch" = "develop" ] || [ "$branch" = "main" ]; then
+    # Get the current commit hash
+    CURRENT_COMMIT=$(git rev-parse --verify HEAD 2>/dev/null || echo "")
+    
+    if [ -n "$CURRENT_COMMIT" ]; then
+        # Check if seal exists for this commit
+        SEAL_FILE=".workbench/test_evidence/seals/${CURRENT_COMMIT}.seal"
+        
+        if [ -f "$SEAL_FILE" ]; then
+            # Verify Phase 2 was passed
+            PHASE2_PASSED=$(python -c "import json; s=json.load(open('$SEAL_FILE')); print(s.get('phase2_passed', False))" 2>/dev/null || echo "False")
+            
+            if [ "$PHASE2_PASSED" = "True" ]; then
+                echo "[PRE-PUSH] ${GREEN}FOR-1(4): Phase 2 evidence seal verified${NC}"
+            else
+                echo "[PRE-PUSH] ${RED}BLOCKED: Phase 2 seal exists but Phase 2 did not pass${NC}"
+                echo "  Commit: $CURRENT_COMMIT"
+                echo "  Run: python .workbench/scripts/test_orchestrator.py run --scope full --set-state"
+                exit 1
+            fi
+        else
+            echo "[PRE-PUSH] ${RED}BLOCKED: No Phase 2 evidence seal found${NC}"
+            echo "  Commit: $CURRENT_COMMIT"
+            echo "  FOR-1(4): Feature branch merge requires Phase 2 full regression evidence"
+            echo "  Run: python .workbench/scripts/test_orchestrator.py run --scope full --set-state"
+            exit 1
+        fi
+    fi
+fi
+
+# =============================================================================
+# FOR-1(1): CHECK CSTA STATE TRANSITION SIGNATURE
+# =============================================================================
+# Feature branches merging to develop/main must have Arbiter-signed state transition
+# This enforces that only the Arbiter (test_orchestrator) can sign state transitions
+# Agents cannot self-transition state to GREEN
+
+# Check if pushing to develop or main
+if [ "$branch" = "develop" ] || [ "$branch" = "main" ]; then
+    if [ -f "state.json" ]; then
+        CURRENT_STATE=$(python -c "import json; s=json.load(open('state.json')); print(s.get('state',''))" 2>/dev/null || echo "")
+        ACTIVE_REQ=$(python -c "import json; s=json.load(open('state.json')); print(s.get('active_req_id',''))" 2>/dev/null || echo "")
+        
+        if [ "$CURRENT_STATE" = "GREEN" ] || [ "$CURRENT_STATE" = "MERGED" ]; then
+            if [ -n "$ACTIVE_REQ" ]; then
+                # Look for CSTA signature file
+                TRANSITION_SIG=$(ls ".workbench/test_evidence/transitions/${ACTIVE_REQ}"_*_"${CURRENT_STATE}.sig" 2>/dev/null || echo "")
+                
+                if [ -f "$TRANSITION_SIG" ]; then
+                    # Verify signature is from Arbiter
+                    SIG_KEY_ID=$(python -c "import json; s=json.load(open('$TRANSITION_SIG')); print(s.get('arbiter_key_id',''))" 2>/dev/null || echo "")
+                    
+                    if echo "$SIG_KEY_ID" | grep -qi "arbiter"; then
+                        echo "[PRE-PUSH] ${GREEN}FOR-1(1): CSTA state transition signature verified${NC}"
+                    else
+                        echo "[PRE-PUSH] ${RED}BLOCKED: State transition signature is not from Arbiter${NC}"
+                        echo "  Signature key ID: $SIG_KEY_ID"
+                        echo "  FOR-1(1): Only test_orchestrator.py (Arbiter) may sign state transitions"
+                        echo "  Agent self-transition is forbidden."
+                        exit 1
+                    fi
+                else
+                    echo "[PRE-PUSH] ${RED}BLOCKED: No CSTA state transition signature found${NC}"
+                    echo "  Active REQ: $ACTIVE_REQ"
+                    echo "  State: $CURRENT_STATE"
+                    echo "  FOR-1(1): Feature branch merge requires Arbiter-signed state transition"
+                    echo "  Run: python .workbench/scripts/test_orchestrator.py run --scope full --set-state"
+                    exit 1
+                fi
+            fi
+        fi
+    fi
+fi
+
+# =============================================================================
+# PVT-2: CHECK PIVOT BRANCH CMS SIGNATURE
+# =============================================================================
+# For pivot/* branches, verify that an Architect signature exists in git notes
+# This enforces that only Architect Agent may initiate pivot branches (PVT-2)
+# 
+# Git note format for pivot signature:
+#   git notes --ref=pivot-signature add -m 'architect:<base64_signature>' HEAD
+
+# Check if this is a pivot branch being pushed
+if echo "$branch" | grep -q "^pivot/"; then
+    # Get the pivot ticket ID from state.json
+    if [ -f "state.json" ]; then
+        PIVOT_TICKET=$(python -c "import json; s=json.load(open('state.json')); print(s.get('active_req_id',''))" 2>/dev/null || echo "")
+        
+        # Try to extract ticket ID from branch name if not in state
+        if [ -z "$PIVOT_TICKET" ]; then
+            # Extract REQ-NNN from branch name (e.g., pivot/REQ-042-fix -> REQ-042)
+            PIVOT_TICKET=$(echo "$branch" | grep -oE "REQ-[0-9]+" | head -1 || echo "UNKNOWN")
+        fi
+        
+        # Get signature from git note
+        # Note: refs/notes/pivot-signature on the branch being pushed
+        SIGNATURE_NOTE=$(git notes --ref=pivot-signature show "refs/heads/${branch}" 2>/dev/null || echo "")
+        
+        if [ -z "$SIGNATURE_NOTE" ]; then
+            echo "[PRE-PUSH] ${RED}BLOCKED: No Architect signature found for pivot branch${NC}"
+            echo "  Branch: $branch"
+            echo "  PVT-2: Only Architect Agent may create pivot branches"
+            echo "  To sign a pivot: python .workbench/scripts/mode_keys.py sign architect $PIVOT_TICKET $branch"
+            echo "  Then add note: git notes --ref=pivot-signature add -m 'architect:<signature>' HEAD"
+            exit 1
+        fi
+        
+        # Parse signature from note (expected: 'architect:<base64_signature>')
+        if ! echo "$SIGNATURE_NOTE" | grep -q "^architect:"; then
+            echo "[PRE-PUSH] ${RED}BLOCKED: Invalid pivot signature format${NC}"
+            echo "  Branch: $branch"
+            echo "  Note format must be: architect:<base64_signature>"
+            exit 1
+        fi
+        
+        SIGNATURE=$(echo "$SIGNATURE_NOTE" | sed 's/^architect://' | tr -d ' \n')
+        
+        # Verify signature using mode_keys.py
+        VERIFY_RESULT=$(python ".workbench/scripts/mode_keys.py" verify architect "$PIVOT_TICKET" "$branch" "$SIGNATURE" 2>/dev/null || echo "VERIFY_FAILED")
+        
+        if echo "$VERIFY_RESULT" | grep -q "VERIFIED"; then
+            echo "[PRE-PUSH] ${GREEN}PVT-2: Pivot branch Architect signature verified${NC}"
+        else
+            echo "[PRE-PUSH] ${RED}BLOCKED: Pivot branch signature invalid or tampered${NC}"
+            echo "  Branch: $branch"
+            echo "  Ticket: $PIVOT_TICKET"
+            echo "  PVT-2: Only Architect Agent may create pivot branches"
+            echo "  Signature verification failed."
+            exit 1
+        fi
+    else
+        echo "[PRE-PUSH] ${RED}BLOCKED: Cannot verify pivot signature without state.json${NC}"
+        exit 1
+    fi
+fi
+
+# =============================================================================
 # ALL CHECKS PASSED
 # =============================================================================
 echo "[PRE-PUSH] ${GREEN}All push gate checks passed — push allowed${NC}"
