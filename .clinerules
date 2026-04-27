@@ -451,3 +451,51 @@ A pivot is triggered when a human submits a Delta Prompt requiring changes to an
 > **Rule PVT-1:** During `PIVOT_IN_PROGRESS`, no commits may be made to the feature branch except the pivot delta commits.
 
 > **Rule PVT-2:** Only the Architect Agent may initiate a pivot during Stage 1; the Developer Agent may request a pivot but requires human approval.
+
+---
+
+## 15. Inbox Flow (Off-Topic Ideas)
+
+### 15.1 When the Inbox Applies
+
+An inbox capture is triggered when a human submits a request/idea that is **unrelated** to the current active task. This is distinct from the Pivot flow (Section 14), which handles **in-flight feature changes**. The Inbox flow handles **new, lower-priority ideas** that should not interrupt the current pipeline.
+
+### 15.2 Rule INB-1: Off-Topic Intake
+
+When a human submits an off-topic request/idea, the agent MUST:
+
+1. Acknowledge the idea and explain it will be captured for later processing
+2. Create a file in `_inbox/{slug}.md` with the idea content verbatim
+3. Tag the content with `@draft` prefix in the file header
+4. NOT assign a Traceability ID (REQ-ID is only assigned upon promotion)
+5. Update `handoff-state.md` to note the captured inbox item
+
+### 15.3 Rule INB-2: Session Start Reminder
+
+At the start of each session, after completing the SCAN→CHECK→CREATE→READ→ACT protocol (Step 5), the agent MUST:
+
+1. Check if `_inbox/` contains any items
+2. If items exist, display a brief summary: "You have N pending inbox item(s): {list}"
+3. Offer to review or process any of them before continuing with the active task
+
+### 15.4 Rule INB-3: Inbox Promotion
+
+When the human approves an inbox item for processing:
+
+1. The Architect Agent assigns the next available REQ-ID
+2. The file is moved from `_inbox/` to `features/`
+3. The `@draft` tag is replaced with `@REQ-NNN`
+4. The Arbiter updates `state.json` to `STAGE_1_ACTIVE` for the promoted feature
+
+### 15.5 Rule INB-4: Inbox Rejection
+
+When the human decides to discard an inbox item:
+
+1. The file remains in `_inbox/` but is tagged as `REJECTED`
+2. It is not processed further unless explicitly re-promoted by the human
+
+### 15.6 Inbox Directory Behavior
+
+- Files in `_inbox/` are **isolated** from the active pipeline
+- The `gherkin_validator.py` runs with `--allow-draft` flag on `_inbox/` files (no REQ-ID enforcement)
+- `@draft` files do not appear in `state.json.feature_registry` until promoted

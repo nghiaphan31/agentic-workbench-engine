@@ -1142,6 +1142,122 @@ def check_gate_notifications() -> CheckResult:
         )
 
 
+def check_inbox_reminder() -> CheckResult:
+    """
+    INB-2: Check if inbox items were acknowledged at session start.
+    
+    Rule INB-2 states:
+    - At session start, agent MUST check if _inbox/ contains items
+    - If items exist, agent MUST display "You have N pending inbox item(s)"
+    - Agent MUST offer to review or process them
+    
+    This check verifies that _inbox/ exists and contains items when the
+    session is active (not in INIT state), and that the agent acknowledged
+    them in activeContext.md or handoff-state.md.
+    
+    NOTE: This is a WARNING-level check because we cannot directly observe
+    the agent's verbal reminder to the human. We check for structural
+    indicators that the inbox was considered.
+    """
+    state = load_state()
+    if not state:
+        return CheckResult(rule="INB-2", status="INFO", message="No state.json found — cannot check inbox reminder")
+    
+    current_state = state.get("state", "")
+    # If state is INIT, inbox reminder doesn't apply yet
+    if current_state == "INIT":
+        return CheckResult(rule="INB-2", status="OK", message="State is INIT — inbox reminder not yet applicable")
+    
+    inbox_dir = REPO_ROOT / "_inbox"
+    
+    # Check if _inbox directory exists
+    if not inbox_dir.exists():
+        return CheckResult(rule="INB-2", status="OK", message="_inbox/ does not exist (no inbox items to track)")
+    
+    # Count items in inbox (exclude .gitkeep)
+    inbox_items = [f for f in inbox_dir.iterdir() if f.is_file() and f.name != ".gitkeep"]
+    
+    if not inbox_items:
+        return CheckResult(rule="INB-2", status="OK", message="_inbox/ is empty — no pending inbox items")
+    
+    # There are inbox items — check if they were acknowledged
+    # Look for inbox acknowledgment in activeContext.md or handoff-state.md
+    active_ctx = HOT_CONTEXT / "activeContext.md"
+    handoff = HOT_CONTEXT / "handoff-state.md"
+    
+    acknowledgment_found = False
+    for file_path in [active_ctx, handoff]:
+        if file_path.exists():
+            try:
+                content = file_path.read_text(encoding="utf-8").lower()
+                # Look for indicators that inbox was acknowledged
+                if any(keyword in content for keyword in ["inbox", "pending item", "_inbox"]):
+                    acknowledgment_found = True
+                    break
+            except Exception:
+                pass
+    
+    if not acknowledgment_found:
+        return CheckResult(
+            rule="INB-2",
+            status="WARNING",
+            message=f"_{len(inbox_items)} pending inbox item(s) but no inbox acknowledgment found in activeContext.md or handoff-state.md",
+            suggestion="Rule INB-2: At session start, check _inbox/ and remind human about pending items: 'You have N pending inbox item(s)'"
+        )
+    
+    return CheckResult(rule="INB-2", status="OK", message=f"_{len(inbox_items)} pending inbox item(s) acknowledged")
+
+
+def check_inbox_intake() -> CheckResult:
+    """
+    INB-1: Verify inbox intake was performed when human submitted off-topic idea.
+    
+    Rule INB-1 states:
+    - When human submits off-topic request/idea, agent MUST:
+      1. Acknowledge the idea
+      2. Create _inbox/{slug}.md with @draft tag
+      3. NOT assign REQ-ID
+      4. Update handoff-state.md
+    
+    This check verifies that if _inbox/ has items, they are properly structured
+    with @draft tag (not @REQ-).
+    
+    NOTE: This is a WARNING-level check. We cannot directly observe the
+    agent's intake behavior, but we can verify the structural integrity
+    of inbox items.
+    """
+    inbox_dir = REPO_ROOT / "_inbox"
+    
+    if not inbox_dir.exists():
+        return CheckResult(rule="INB-1", status="OK", message="_inbox/ does not exist — no intake to verify")
+    
+    # Check all files in _inbox/ for proper @draft tagging
+    invalid_items = []
+    for inbox_file in inbox_dir.iterdir():
+        if inbox_file.is_file() and inbox_file.suffix == ".md" and inbox_file.name != ".gitkeep":
+            try:
+                content = inbox_file.read_text(encoding="utf-8")
+                # Check for @draft tag
+                if "@draft" not in content:
+                    invalid_items.append(f"{inbox_file.name} (missing @draft tag)")
+                # Check that no REQ-ID was assigned (should not have @REQ- in inbox items)
+                if "@REQ-" in content:
+                    invalid_items.append(f"{inbox_file.name} (has @REQ- tag — should only be assigned at promotion)")
+            except Exception:
+                pass
+    
+    if invalid_items:
+        return CheckResult(
+            rule="INB-1",
+            status="WARNING",
+            message=f"Inbox intake violation: {len(invalid_items)} item(s) not properly tagged",
+            suggestion="Rule INB-1: Inbox files must have @draft tag (no REQ-ID) until promoted",
+            details=invalid_items[:5]
+        )
+    
+    return CheckResult(rule="INB-1", status="OK", message="All inbox items properly tagged with @draft")
+
+
 def check_large_file_warning() -> CheckResult:
     """
     LGF-1: Preventive chunking enforcement — WARNING level, not blocking.
@@ -1399,6 +1515,8 @@ CHECK_REGISTRY = {
     "GATE_NOTIFY":    check_gate_notifications,
     "PVT-2":          check_pivot_signature,
     "LGF-1":          check_large_file_warning,
+    "INB-1":          check_inbox_intake,
+    "INB-2":          check_inbox_reminder,
 }
 
 # Checks run in check-session mode (lightweight — 5 critical rules for session startup)
@@ -1409,7 +1527,8 @@ CHECK_REGISTRY = {
 #       FOR-1(4) is CRITICAL level — Phase 2 evidence enforcement
 #       FOR-1(1) is CRITICAL level — CSTA state transition signing
 #       FOR-1(7) is CRITICAL level — LAACT live import detection at commit time
-SESSION_CHECKS = ["SLC-2", "MEM-1", "MEM-3a", "DEP-1", "DEP-3", "FAC-1", "CR-1", "HOOK-INSTALL", "GATEKEEPER", "GATE_NOTIFY", "LGF-1", "FOR-1(4)", "FOR-1(1)", "FOR-1(7)", "PVT-2"]
+#       INB-1, INB-2 are WARNING level — inbox intake and reminder enforcement
+SESSION_CHECKS = ["SLC-2", "MEM-1", "MEM-3a", "DEP-1", "DEP-3", "FAC-1", "CR-1", "HOOK-INSTALL", "GATEKEEPER", "GATE_NOTIFY", "LGF-1", "FOR-1(4)", "FOR-1(1)", "FOR-1(7)", "PVT-2", "INB-1", "INB-2"]
 
 
 def format_result(result: CheckResult) -> str:
